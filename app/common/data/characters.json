@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "version": 1,
+    "updated_at": "2026-01-09T17:03:04+09:00"
+  },
+  "characters": [
+    {
+      "name": "서하린",
+      "birthdate_or_age": "스물네 살",
+      "gender": "여성",
+      "occupation": "기자(사회부 탐사 보도 담당)",
+      "core_features": [
+        "겉보기에는 차분하고 이성적",
+        "한 번 물면 놓지 않는 집요함",
+        "타인과의 거리 유지",
+        "타인의 고통에 공감"
+      ],
+      "personality_strengths": [
+        "탐사 보도 집요함",
+        "사회적 문제에 대한 공감 능력",
+        "깊은 사고 능력"
+      ],
+      "personality_weaknesses": [
+        "타인 불신",
+        "감정 표현에 서툼",
+        "과거 트라우마"
+      ],
+      "external_goal": "탐사 보도를 통해 특종 발굴 및 가치 증명",
+      "internal_goal": "과거 사건 마주보기 및 자기 용서",
+      "trauma_weakness": "어린 시절 가족 관련 사건으로 인한 불신",
+      "speech_habit": "문장 끝을 흐리는 말투, 생각이 깊어질수록 말수 감소",
+      "additional_settings": {},
+      "relationships": [
+        {
+          "target_id": "이도윤",
+          "type": "동료 기자",
+          "summary": "협력 관계이지만 완전한 신뢰 부재"
+        }
+      ],
+      "id": "char_001",
+      "created_at": "2026-01-09T17:03:04+09:00",
+      "updated_at": "2026-01-09T17:03:04+09:00"
+    }
+  ]
+}
