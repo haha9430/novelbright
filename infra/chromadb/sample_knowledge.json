@@ -1,0 +1,96 @@
+{
+    "documents": [
+        "ChromaDB는 오픈소스 벡터 데이터베이스로, AI 애플리케이션을 위한 임베딩을 저장하고 검색할 수 있습니다. Python, JavaScript에서 사용 가능하며, 로컬 환경과 클라우드 환경 모두에서 실행할 수 있습니다.",
+
+      "ChromaDB 설치: pip install chromadb 명령어로 설치할 수 있습니다. 기본적으로 SQLite를 사용하며, 영구 저장을 위해서는 PersistentClient를 사용해야 합니다.",
+
+      "ChromaDB 클라이언트 생성: import chromadb; client = chromadb.Client() 또는 영구 저장을 위해 client = chromadb.PersistentClient(path='/path/to/save/chroma')",
+
+      "컬렉션 생성 및 관리: collection = client.create_collection(name='my_collection') 또는 기존 컬렉션 가져오기 collection = client.get_collection(name='my_collection'). 컬렉션은 문서와 임베딩을 그룹화하는 단위입니다.",
+
+      "문서 추가: collection.add(documents=['문서1', '문서2'], metadatas=[{'source': 'web'}, {'source': 'book'}], ids=['id1', 'id2']). ChromaDB는 자동으로 임베딩을 생성합니다.",
+
+      "문서 검색: results = collection.query(query_texts=['검색할 텍스트'],n_results=2). 결과에는 documents, metadatas, distances,  ids가 포함됩니다.",
+
+      "임베딩 모델 변경: ChromaDB는 기본적으로 sentence-transformers를 사용하지만, OpenAI, Cohere 등의 다른 임베딩 모델도 지원합니다. collection = client.create_collection(name='my_collection', embedding_function=my_embedding_function)",
+
+      "문서 업데이트: collection.update(ids=['id1'], documents=['업데이트된 문서'], metadatas=[{'updated': True}]). 기존 문서의 내용이나 메타데이터를 수정할 수 있습니다.",
+
+      "문서 삭제: collection.delete(ids=['id1']) 또는 조건부 삭제 collection.delete(where={'source': 'old_data'}). 특정 ID나 메타데이터 조건으로 문서를 삭제할 수 있습니다.",
+
+      "메타데이터 필터링: collection.query(query_texts=['검색어'], where={'source': 'web'}, n_results=5). 메타데이터를 기준으로 검색 결과를 필터링할 수 있습니다.",
+
+      "벡터 유사도 검색: ChromaDB는 코사인 유사도를 기본으로 사용하며, 유클리드 거리나 내적도 지원합니다. 거리 메트릭은 컬렉션 생성 시 설정 가능합니다.",
+
+      "Docker로 ChromaDB 실행: docker run -p 8000:8000 chromadb/chroma 명령어로 서버 모드로 실행할 수 있습니다. HTTP API를 통해 원격접속이 가능합니다.",
+
+      "ChromaDB 성능 최적화: 대용량 데이터 처리 시 배치 단위로 문서를 추가하고, 적절한 임베딩 모델을 선택하며, 메모리 사용량을 모니터링하는 것이 중요합니다."
+],
+"metadatas": [
+    {
+        "category": "개요",
+        "source": "ChromaDB 공식 문서",
+        "topic": "소개"
+    },
+    {
+        "category": "설치",
+        "source": "ChromaDB 공식 문서",
+        "topic": "설치"
+    },
+    {
+        "category": "기본설정",
+        "source": "ChromaDB 공식 문서",
+        "topic": "클라이언트"
+    },
+    {
+        "category": "기본설정",
+        "source": "ChromaDB 공식 문서",
+        "topic": "컬렉션"
+    },
+    {
+        "category": "CRUD",
+        "source": "ChromaDB 공식 문서",
+        "topic": "문서추가"
+    },
+    {
+        "category": "CRUD",
+        "source": "ChromaDB 공식 문서",
+        "topic": "검색"
+    },
+    {
+        "category": "고급설정",
+        "source": "ChromaDB 공식 문서",
+        "topic": "임베딩"
+    },
+    {
+        "category": "CRUD",
+        "source": "ChromaDB 공식 문서",
+        "topic": "업데이트"
+    },
+    {
+        "category": "CRUD",
+        "source": "ChromaDB 공식 문서",
+        "topic": "삭제"
+    },
+    {
+        "category": "고급설정",
+        "source": "ChromaDB 공식 문서",
+        "topic": "필터링"
+    },
+    {
+        "category": "고급설정",
+        "source": "ChromaDB 공식 문서",
+        "topic": "유사도"
+    },
+    {
+        "category": "배포",
+        "source": "ChromaDB 공식 문서",
+        "topic": "Docker"
+    },
+    {
+        "category": "최적화",
+        "source": "ChromaDB 공식 문서",
+        "topic": "성능"
+    }
+]
+}

@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    ports:
+      - "8000:8000"
+    environment:
+      - CHROMA_HOST_ADDR=0.0.0.0
+      - CHROMA_HOST_PORT=8000
+      - IS_PERSISTENT=TRUE
+    volumes:
+      - ./chroma_data:/data
+    networks:
+      - gangwon-network
+    restart: unless-stopped
+
+  backend:
+    image: upstage-gangwon-backend:lite
+    container_name: upstage-gangwon-backend
+    ports:
+      - "8880:8880"
+    environment:
+      - UPSTAGE_API_KEY=${UPSTAGE_API_KEY}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    depends_on:
+      - chromadb
+    networks:
+      - gangwon-network
+    restart: unless-stopped
+
+networks:
+  gangwon-network:
+    driver: bridge
+
+volumes:
+  chroma_data:
+    driver: local

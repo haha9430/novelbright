@@ -1,0 +1,9 @@
+CREATE database llmagent;
+USE llmagent;
+
+CREATE TABLE users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(50) NOT NULL,
+  email VARCHAR(100) UNIQUE,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
