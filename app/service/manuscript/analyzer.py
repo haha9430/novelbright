@@ -1,4 +1,5 @@
 import json
+import re
 from typing import List, Dict, Any, Set
 from langchain_upstage import ChatUpstage
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -93,28 +94,24 @@ class ManuscriptAnalyzer:
         }
 
     def _extract_entities_from_text(self, text: str) -> List[str]:
-        # [수정] 한국어 뉘앙스를 반영하여 구체적인 제외 규칙을 설정
+        # (프롬프트는 아까 수정한 한국어 버전 그대로 사용)
         prompt = """
         당신은 역사 소설의 고증을 돕는 전문 어시스턴트입니다.
         주어진 텍스트에서 '역사적 배경 지식'이나 '백과사전 검색'이 필요한 **중요 키워드(고유명사)**만 추출하세요.
 
         [추출 규칙]
-        1. **대상 (포함):** - 실존했던 역사적 인물 (예: 조지프 리스터, 김대건 신부)
-           - 구체적인 지명이나 기관명 (예: 유니버시티 칼리지 런던, 마카오)
-           - 역사적 사건, 유물, 종교/학술 용어 (예: 퀘이커, 을미사변)
+        1. **대상 (포함):** - 실존했던 역사적 인물
+           - 구체적인 지명이나 기관명
+           - 특정 지명
+           - 역사적 사건, 유물, 종교/학술 용어
 
-        2. **제외 (무시):** - 흔한 일반 명사 (예: 의과 대학, 병원, 영국 의사, 촌놈, 집안)
-           - 단순한 시간/장소 표현 (예: 21세기, 한국, 영국, 오늘날, 아침)
-           - 소설 속 허구의 인물 이름이나 호칭 (유명 위인이 아니면 제외)
-             (예: 인석이, 놈, 자네)
+        2. **제외 (무시 - 엄격 적용):** - **일반 명사 단독 사용:** 앞뒤에 고유한 이름이 없는 경우 제외.
+            - **단순 시공간 표현:** 단순 시점이나 장소 제외.
+            - **소설 속 허구:** 주인공의 사적인 대화나 행동에서 나오는 잡다한 사물.
 
         [출력 형식]
         - 결과는 오직 JSON 리스트 형식으로만 반환하세요.
-        - 부연 설명은 하지 마세요.
-
-        [예시]
-        입력: "인석이는 19세기 런던의 유니버시티 칼리지 병원에서 조지프 리스터를 만났다."
-        출력: ["19세기 런던", "유니버시티 칼리지 병원", "조지프 리스터"]
+        - 마크다운이나 부연 설명 없이, 오직 ["항목1", "항목2"] 형태만 출력하세요.
         """
 
         try:
@@ -122,10 +119,39 @@ class ManuscriptAnalyzer:
                 SystemMessage(content=prompt),
                 HumanMessage(content=text[:3000])
             ])
-            # 마크다운 코드 블록 제거 후 파싱
-            content = response.content.replace("```json", "").replace("```", "").strip()
-            result = json.loads(content)
-            return result if isinstance(result, list) else []
+            content = response.content.strip()
+
+            # [수정] 괄호 짝을 맞춰서 정확한 JSON 영역만 추출하는 함수
+            def extract_json_list(s):
+                start_idx = s.find('[')
+                if start_idx == -1: return None
+
+                count = 0
+                for i in range(start_idx, len(s)):
+                    if s[i] == '[':
+                        count += 1
+                    elif s[i] == ']':
+                        count -= 1
+
+                    # 괄호가 모두 닫혔을 때 (count가 0이 됨)
+                    if count == 0:
+                        return s[start_idx : i+1]
+                return None
+
+            json_str = extract_json_list(content)
+
+            if json_str:
+                result = json.loads(json_str)
+                return result if isinstance(result, list) else []
+            else:
+                # 괄호 구조를 못 찾았을 경우, 기존 방식(단순 제거)으로 한 번 더 시도 (보험)
+                fallback = content.replace("```json", "").replace("```", "").strip()
+                # 마지막에 혹시 짤렸을 수 있으니 닫는 괄호 체크는 생략하고 시도
+                return json.loads(fallback) if isinstance(json.loads(fallback), list) else []
+
+        except json.JSONDecodeError:
+            print(f"⚠️ JSON 파싱 실패 (내용): {content[:50]}...")
+            return []
         except Exception as e:
-            print(f"⚠️ 엔티티 추출 실패: {e}")
+            print(f"⚠️ 기타 오류: {e}")
             return []
