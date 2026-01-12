@@ -1,19 +1,39 @@
 [project]
-name = "moneta project"
+name = "moneta_project"
 version = "0.1.0"
-description = "Add your description here"
+description = "Moneta: AI-powered Web Novel Assistant (Common Tools API)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.122.0",
-    "uvicorn[standard]>=0.38.0",
-    "chromadb>=0.4.0",
-    "openai==1.52.2",
-    "python-dotenv>=1.0.0",
-    "pydantic>=2.0.0",
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "pytest-mock>=3.12.0",
+    # --- Web Framework ---
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.9",      # 파일 업로드 및 폼 데이터 처리에 필요
+
+    # --- Database (RDBMS: PostgreSQL & ORM) ---
+    "sqlalchemy>=2.0.30",           # ORM 핵심
+    "psycopg2-binary>=2.9.9",       # PostgreSQL 드라이버
+    "pgvector>=0.3.0",              # PostgreSQL 벡터 확장 기능 (repo.py 구현 시 필요)
+
+    # --- Vector Database ---
+    "chromadb>=0.5.0",              # 로컬 벡터 DB 코어
+
+    # --- Graph Database (Optional/Future) ---
+    "neo4j>=5.20.0",                # Neo4j 드라이버 (GraphRAG 구현 시 필요)
+
+    # --- LLM & LangChain Ecosystem ---
+    "langchain>=0.2.0",             # LangChain 프레임워크
+    "langchain-core>=0.2.0",
+    "langchain-upstage>=0.1.0",     # Upstage Solar (LLM/Embedding) 연동 핵심
+    "langchain-chroma>=0.1.0",      # LangChain용 Chroma 통합
+    "langchain-community>=0.2.0",   # Neo4jGraph 및 기타 유틸리티 포함
+    "openai>=1.52.2",               # (기존 유지) OpenAI 클라이언트
+
+    # --- Utilities ---
+    "python-dotenv>=1.0.0",         # .env 파일 로드
+    "pydantic>=2.7.0",              # 데이터 검증
+    "pydantic-settings>=2.2.0",     # 환경설정 관리 (선택 사항이나 추천)
+    "tiktoken>=0.7.0",              # 토큰 계산용 (청크 분할 시 유용)
 ]
 
 [tool.pytest.ini_options]
@@ -30,4 +50,13 @@ addopts = [
 markers = [
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
+]
+
+# (선택 사항) 테스트 의존성을 별도로 관리하고 싶다면 아래와 같이 그룹화 가능
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.12.0",
+    "httpx>=0.27.0",                # FastAPI TestClient 사용 시 필수
 ]

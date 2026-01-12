@@ -1,7 +1,7 @@
 {
   "meta": {
     "version": 1,
-    "updated_at": "2026-01-12T09:11:42+09:00"
+    "updated_at": "2026-01-12T14:03:12+09:00"
   },
   "entities": [
     {
@@ -60,44 +60,6 @@
       "updated_at": "2026-01-11T16:27:36+09:00"
     },
     {
-      "id": "hist_0003",
-      "name": "동구릉",
-      "entity_type": "Location",
-      "era": "1408년(태종 8) ~ 19세기",
-      "summary": "조선 최대 왕릉군으로 7명의 왕과 10명의 왕비가 안장된 유네스코 세계문화유산",
-      "description": "동구릉(東九陵)은 경기도 구리시에 위치한 조선 왕릉군으로, 태조 건원릉(1408년)을 시작으로 450여 년간 9기의 능이 조성되었다. 문종 현릉, 선조 목릉, 현종 숭릉, 장렬왕후 휘릉, 단의왕후 혜릉, 영조 원릉, 헌종 경릉 등이 포함되며, 문조 수릉 이전 후 현재의 명칭이 확정되었다. 단릉·쌍릉·동원이강릉·합장릉·삼연릉 등 다양한 형식의 왕릉이 집적된 역사적 장소이다.",
-      "tags": [
-        "조선왕릉",
-        "유네스코세계문화유산",
-        "구리시",
-        "왕릉군"
-      ],
-      "sources": [],
-      "related_entities": [
-        {
-          "relation_type": "건원릉 조성자",
-          "target_id": null,
-          "target_name": "태조",
-          "description": "조선 건국자 태조 이성계의 능"
-        },
-        {
-          "relation_type": "현릉 조성자",
-          "target_id": null,
-          "target_name": "문종",
-          "description": "조선 제5대 왕 문종의 능"
-        },
-        {
-          "relation_type": "목릉 조성자",
-          "target_id": null,
-          "target_name": "선조",
-          "description": "조선 제14대 왕 선조의 능"
-        }
-      ],
-      "created_at": "2026-01-11T16:30:01+09:00",
-      "updated_at": "2026-01-11T20:13:30+09:00",
-      "status": "restore"
-    },
-    {
       "id": "hist_0005",
       "name": "훈민정음",
       "entity_type": "Artifact",
@@ -128,6 +90,1327 @@
       ],
       "created_at": "2026-01-11T18:57:59+09:00",
       "updated_at": "2026-01-11T18:57:59+09:00"
+    },
+    {
+      "id": "hist_0006",
+      "name": "홍릉 및 유릉",
+      "entity_type": "Location",
+      "era": "1897년(광무 원년) 이후",
+      "summary": "대한제국 황제 고종과 명성황후, 순종과 두 황후의 무덤으로 조선왕릉과 명 효릉 제도를 결합한 독특한 형식의 황릉",
+      "description": "홍릉은 대한제국 제1대 황제 고종과 명성황후의 합장릉이며, 유릉은 순종과 두 황후의 동봉삼실릉이다. 기존 조선왕릉과 달리 명나라 효릉 제도를 참조해 병풍석·침전·다양한 석물(석인·기린·코끼리 등)을 배치했으며, 두 릉을 담장과 연못으로 연결한 것이 특징이다. 명성황후는 을미사변 때 일본인에 의해 피살된 비운의 인물로, 청량리에서 홍릉으로 이장되었다.",
+      "tags": [
+        "대한제국",
+        "황릉",
+        "조선왕릉",
+        "명나라 효릉",
+        "풍수지리",
+        "을미사변"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "주인공",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "대한제국 제1대 황제, 홍릉의 주인공"
+        },
+        {
+          "relation_type": "주인공",
+          "target_id": null,
+          "target_name": "명성황후",
+          "description": "고종의 비, 을미사변 희생자, 홍릉 합장"
+        },
+        {
+          "relation_type": "주인공",
+          "target_id": null,
+          "target_name": "순종",
+          "description": "대한제국 제2대 황제, 유릉의 주인공"
+        },
+        {
+          "relation_type": "관련 사건",
+          "target_id": null,
+          "target_name": "을미사변",
+          "description": "명성황후 피살 사건"
+        },
+        {
+          "relation_type": "참조 대상",
+          "target_id": null,
+          "target_name": "명나라 효릉",
+          "description": "홍릉·유릉 제도 참조 모델"
+        }
+      ],
+      "created_at": "2026-01-12T10:02:25+09:00",
+      "updated_at": "2026-01-12T10:02:25+09:00"
+    },
+    {
+      "id": "hist_0007",
+      "name": "홍릉과 유릉",
+      "entity_type": "Location",
+      "era": "1897년(광무 원년) 이후",
+      "summary": "대한제국 황제 고종과 명성황후, 순종과 두 황후의 무덤으로 조선왕릉과 명 효릉 제도를 결합한 독특한 형식의 황릉",
+      "description": "홍릉은 고종과 명성황후의 합장릉으로, 대한제국 수립 후 명나라 태조 효릉과 조선왕릉 제도를 혼합해 병풍석·침전·다양한 석물 등을 배치한 황제식 능묘. 유릉은 순종과 두 황후의 동봉삼실릉으로 조선왕릉 중 유일한 3실 구조. 두 능은 담장과 석조 연못으로 연결되며, 기존 왕릉과 달리 규모·형식에서 황제국의 위엄을 반영함.",
+      "tags": [
+        "대한제국",
+        "황릉",
+        "조선왕릉",
+        "명나라 효릉",
+        "풍수지리"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "건설자",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "홍릉의 주인공이자 대한제국 초대 황제"
+        },
+        {
+          "relation_type": "매장자",
+          "target_id": null,
+          "target_name": "명성황후",
+          "description": "을미사변 희생 후 청량리에서 홍릉으로 이장된 황후"
+        },
+        {
+          "relation_type": "매장자",
+          "target_id": null,
+          "target_name": "순종",
+          "description": "유릉의 주인공이자 대한제국 마지막 황제"
+        },
+        {
+          "relation_type": "참조 모델",
+          "target_id": null,
+          "target_name": "명나라 효릉",
+          "description": "홍릉 설계에 영향을 준 명 태조 능묘"
+        }
+      ],
+      "created_at": "2026-01-12T10:04:15+09:00",
+      "updated_at": "2026-01-12T10:04:15+09:00"
+    },
+    {
+      "id": "hist_0008",
+      "name": "홍릉·유릉·동구릉 역사 기록",
+      "entity_type": "Concept",
+      "era": "1897~1926",
+      "summary": "대한제국기 황제릉 제도와 조선왕릉 변천사를 보여주는 홍릉·유릉 및 동구릉에 대한 종합적 기록",
+      "description": "홍릉(고종·명성황후 합장릉)과 유릉(순종·순명효황후·순정효황후 동봉삼실릉)은 대한제국기 황제릉 제도의 특징을 보여주며, 동구릉은 조선 전기부터 후기까지 다양한 왕릉 형식을 집대성한 왕릉군이다. 홍릉은 명나라 효릉과 조선왕릉을 결합한 독자적 형식(병풍석·침전·석물 배치)을 채택했고, 유릉은 조선 유일의 동봉삼실릉 구조를 가진다. 동구릉은 9기의 능이 모여 있으며 단릉·쌍릉·합장릉 등 다양한 왕릉 형식을 확인할 수 있다.",
+      "tags": [
+        "대한제국",
+        "조선왕릉",
+        "황제릉",
+        "풍수지리",
+        "석물조각"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "관련 인물",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "대한제국 초대 황제, 홍릉의 주인공"
+        },
+        {
+          "relation_type": "관련 인물",
+          "target_id": null,
+          "target_name": "명성황후",
+          "description": "을미사변으로 희생된 고종의 비, 홍릉 합장"
+        },
+        {
+          "relation_type": "관련 인물",
+          "target_id": null,
+          "target_name": "순종",
+          "description": "대한제국 마지막 황제, 유릉의 주인공"
+        },
+        {
+          "relation_type": "관련 유적",
+          "target_id": null,
+          "target_name": "동구릉",
+          "description": "조선 최대 왕릉군, 9기의 능 포함"
+        }
+      ],
+      "created_at": "2026-01-12T10:08:07+09:00",
+      "updated_at": "2026-01-12T10:08:07+09:00"
+    },
+    {
+      "id": "hist_0009",
+      "name": "홍릉과 유릉의 역사적 기록",
+      "entity_type": "Artifact",
+      "era": "1897년(광무 원년) ~ 20세기 초",
+      "summary": "대한제국기 황제와 황후의 무덤인 홍릉과 유릉의 구조 및 역사적 배경",
+      "description": "홍릉은 고종과 명성황후의 합장 무덤으로, 대한제국 수립 후 명나라 효릉과 조선왕릉 제도를 결합한 독특한 양식을 채택하였다. 유릉은 순종과 두 황후의 무덤으로, 조선왕릉 중 유일하게 한 봉우리에 3개의 방을 가진 동봉삼실릉이다. 두 릉은 황제릉의 위엄을 강조하기 위해 석물의 규모와 배치가 기존 왕릉과 차별화되었다. 추가로 주먹도끼에 대한 구석기 시대 유물 설명도 포함되어 있다.",
+      "tags": [
+        "대한제국",
+        "왕릉",
+        "명성황후",
+        "고종",
+        "순종",
+        "석물",
+        "구석기 유물"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "관련 인물",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "대한제국 제1대 황제, 홍릉의 주인공"
+        },
+        {
+          "relation_type": "관련 인물",
+          "target_id": null,
+          "target_name": "명성황후",
+          "description": "고종의 부인, 을미사변 희생자, 홍릉 합장자"
+        },
+        {
+          "relation_type": "관련 인물",
+          "target_id": null,
+          "target_name": "순종",
+          "description": "대한제국 마지막 황제, 유릉의 주인공"
+        },
+        {
+          "relation_type": "관련 유물",
+          "target_id": null,
+          "target_name": "주먹도끼",
+          "description": "구석기 시대 석기, 동아시아 독자적 분류 필요"
+        }
+      ],
+      "created_at": "2026-01-12T10:09:25+09:00",
+      "updated_at": "2026-01-12T10:09:25+09:00"
+    },
+    {
+      "id": "hist_0010",
+      "name": "홍릉",
+      "entity_type": "Location",
+      "era": "대한제국",
+      "summary": "고종과 명성황후의 합장릉",
+      "description": "대한제국 제1대 황제 고종과 명성황후의 무덤. 대한제국 선포 후 명나라 효릉과 조선왕릉 제도를 결합한 독특한 형식으로 조성되었다.",
+      "tags": [
+        "풍수",
+        "명성황후",
+        "왕릉",
+        "대한제국",
+        "역사 건축물",
+        "황릉",
+        "고종"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Creator",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "홍릉의 주인공"
+        },
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "명성황후",
+          "description": "홍릉의 합장자"
+        },
+        {
+          "relation_type": "Inspiration",
+          "target_id": null,
+          "target_name": "명나라 효릉",
+          "description": "무덤 제도 참고"
+        },
+        {
+          "relation_type": "Inspiration",
+          "target_id": null,
+          "target_name": "명나라 태조 효릉",
+          "description": "홍릉 설계에 영향"
+        },
+        {
+          "relation_type": "Enemy",
+          "target_id": null,
+          "target_name": "일본인",
+          "description": "명성황후 살해 관련"
+        }
+      ],
+      "created_at": "2026-01-12T10:22:45+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0011",
+      "name": "고종",
+      "entity_type": "Person",
+      "era": "대한제국",
+      "summary": "대한제국 초대 황제",
+      "description": "임오군란, 갑신정변, 을미사변 등을 겪은 대한제국의 초대 황제. 홍릉의 주인공.",
+      "tags": [
+        "을미사변",
+        "대한제국",
+        "갑신정변",
+        "군주",
+        "정치인",
+        "역사 인물",
+        "임오군란",
+        "황제",
+        "조선 왕실"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "임오군란",
+          "description": "재위 기간 중 발생한 사건"
+        },
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "갑신정변",
+          "description": "재위 기간 중 발생한 사건"
+        },
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "을미사변",
+          "description": "명성황후가 살해당한 사건"
+        },
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "홍릉",
+          "description": "고종의 무덤"
+        },
+        {
+          "relation_type": "Enemy",
+          "target_id": null,
+          "target_name": "일본인",
+          "description": "명성황후 살해 사건의 가해자 집단"
+        }
+      ],
+      "created_at": "2026-01-12T10:22:46+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0012",
+      "name": "명성황후",
+      "entity_type": "Person",
+      "era": "조선 말기",
+      "summary": "고종의 비이자 대한제국 추존 황후",
+      "description": "을미사변 때 일본인에 의해 살해된 비운의 왕비. 청량리에 안장되었다가 홍릉에 합장됨.",
+      "tags": [
+        "을미사변",
+        "대한제국",
+        "비극적 사건",
+        "역사적 인물",
+        "홍릉",
+        "왕비",
+        "역사 인물",
+        "비운"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Victim",
+          "target_id": null,
+          "target_name": "을미사변",
+          "description": "사건 희생자"
+        },
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "홍릉",
+          "description": "명성황후의 합장릉"
+        },
+        {
+          "relation_type": "Enemy",
+          "target_id": null,
+          "target_name": "일본인",
+          "description": "명성황후 살해 관련"
+        }
+      ],
+      "created_at": "2026-01-12T10:22:48+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0013",
+      "name": "유릉",
+      "entity_type": "Location",
+      "era": "대한제국",
+      "summary": "순종과 두 황후의 삼합장릉",
+      "description": "순종, 순명효황후, 순정효황후의 무덤. 조선왕릉 중 유일한 동봉삼실릉 형식.",
+      "tags": [
+        "왕릉",
+        "대한제국",
+        "순종",
+        "역사 건축물",
+        "황릉",
+        "삼합장"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Creator",
+          "target_id": null,
+          "target_name": "순종",
+          "description": "유릉의 주인공"
+        },
+        {
+          "relation_type": "Influence",
+          "target_id": null,
+          "target_name": "홍릉",
+          "description": "유사한 건축 양식을 공유한 대한제국 황릉"
+        }
+      ],
+      "created_at": "2026-01-12T10:22:49+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0014",
+      "name": "순종",
+      "entity_type": "Person",
+      "era": "대한제국",
+      "summary": "대한제국의 마지막 황제",
+      "description": "유릉의 주인공. 순명효황후와 순정효황후와 합장됨.",
+      "tags": [
+        "역사 인물",
+        "황제",
+        "대한제국",
+        "군주",
+        "조선 왕실"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "유릉",
+          "description": "순종의 무덤"
+        }
+      ],
+      "created_at": "2026-01-12T10:22:51+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0015",
+      "name": "임오군란",
+      "entity_type": "Event",
+      "era": "조선 말기",
+      "summary": "조선 말기 군란",
+      "description": "고종 재위기간 중 발생한 정치적 사건으로, 군인의 불만이 폭발한 사건.",
+      "tags": [
+        "조선 말기 사건",
+        "정치적 사건",
+        "반란",
+        "군사 사건",
+        "역사 사건",
+        "조선",
+        "군란",
+        "조선 말기"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "임오군란 당시 재위 중인 군주"
+        }
+      ],
+      "created_at": "2026-01-12T10:22:53+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0016",
+      "name": "갑신정변",
+      "entity_type": "Event",
+      "era": "조선 말기",
+      "summary": "조선 말기 정변",
+      "description": "고종 재위기간 중 발생한 개화파의 쿠데타 시도.",
+      "tags": [
+        "조선 말기 사건",
+        "정치적 사건",
+        "개화파",
+        "조선",
+        "역사 사건",
+        "조선 말기",
+        "정변",
+        "쿠데타"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "갑신정변 당시 재위 중인 군주"
+        }
+      ],
+      "created_at": "2026-01-12T10:22:55+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0017",
+      "name": "을미사변",
+      "entity_type": "Event",
+      "era": "조선 말기",
+      "summary": "명성황후 살해 사건",
+      "description": "1895년 일본인에 의해 명성황후가 살해된 사건.",
+      "tags": [
+        "살해",
+        "조선 말기 사건",
+        "정치적 사건",
+        "일본",
+        "조선",
+        "역사 사건",
+        "명성황후",
+        "암살 사건",
+        "조선 말기",
+        "암살"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Victim",
+          "target_id": null,
+          "target_name": "명성황후",
+          "description": "을미사변의 희생자"
+        },
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "당시 군주"
+        },
+        {
+          "relation_type": "Enemy",
+          "target_id": null,
+          "target_name": "일본인",
+          "description": "명성황후 살해자"
+        }
+      ],
+      "created_at": "2026-01-12T10:23:02+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0018",
+      "name": "순명효황후",
+      "entity_type": "Person",
+      "era": "대한제국",
+      "summary": "순종의 첫 번째 황후",
+      "description": "유릉에 합장된 순종의 첫 번째 황후.",
+      "tags": [
+        "왕비",
+        "대한제국",
+        "황후"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "유릉",
+          "description": "순명효황후의 무덤"
+        }
+      ],
+      "created_at": "2026-01-12T10:23:05+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0019",
+      "name": "순정효황후",
+      "entity_type": "Person",
+      "era": "대한제국",
+      "summary": "순종의 두 번째 황후",
+      "description": "유릉에 합장된 순종의 두 번째 황후.",
+      "tags": [
+        "왕비",
+        "대한제국",
+        "황후"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "유릉",
+          "description": "순정효황후의 무덤"
+        }
+      ],
+      "created_at": "2026-01-12T10:23:08+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0020",
+      "name": "청량리",
+      "entity_type": "Location",
+      "era": "조선 말기",
+      "summary": "명성황후 초기 매장지",
+      "description": "명성황후의 유해가 풍수지리 문제로 홍릉으로 이장되기 전 안치된 장소",
+      "tags": [
+        "장소",
+        "매장지",
+        "서울 지역",
+        "명성황후",
+        "조선"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "RelatedPerson",
+          "target_id": null,
+          "target_name": "명성황후",
+          "description": "초기 묘소 위치"
+        }
+      ],
+      "created_at": "2026-01-12T10:23:10+09:00",
+      "updated_at": "2026-01-12T10:52:31+09:00"
+    },
+    {
+      "id": "hist_0021",
+      "name": "홍릉·유릉",
+      "entity_type": "Location",
+      "era": "대한제국",
+      "summary": "대한제국 제1대 황제 고종과 명성황후의 홍릉, 순종·순명효황후·순정효황후의 유릉으로 구성된 대한제국 황실 무덤군",
+      "description": "홍릉과 유릉은 대한제국 시기 황제릉으로 기존의 조선왕릉 제도와 명나라 효릉 제도를 결합한 독특한 양식을 보여준다. 홍릉(1897년 조성)은 고종(광무제)과 을미사변으로 희생된 명성황후의 합장릉이며, 유릉은 순종과 두 황후의 삼실릉으로 조선왕릉 중 유일한 동봉삼실릉이다. 두 릉은 황제 국격에 맞춰 석물의 규모와 종류가 확대되었으며, 침전 건물·병풍석·난간석·기린·코끼리 등 상징적 석물을 배치했다. 명성황후의 초장지는 청량리였으나 풍수 문제로 홍릉에 합장되었다. 철종 이전 왕릉과 구별되는 대한제국 황릉의 위엄을 구현한 대표 유적이다.",
+      "tags": [
+        "대한제국",
+        "황릉",
+        "유네스코 세계유산",
+        "조선왕릉",
+        "명나라 영향"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Occupant",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "대한제국 초대 황제, 홍릉의 주인공. 임오군란·갑신정변 등 혼란기 통치"
+        },
+        {
+          "relation_type": "Occupant",
+          "target_id": null,
+          "target_name": "명성황후",
+          "description": "고종의 황후, 을미사변 때 일본인에 의해 피살. 청량리 초장 후 홍릉 합장"
+        },
+        {
+          "relation_type": "Occupant",
+          "target_id": null,
+          "target_name": "순종",
+          "description": "대한제국 마지막 황제, 유릉의 주인공"
+        },
+        {
+          "relation_type": "RelatedEvent",
+          "target_id": null,
+          "target_name": "을미사변",
+          "description": "1895년 명성황후 피살 사건"
+        },
+        {
+          "relation_type": "ArchitecturalInfluence",
+          "target_id": null,
+          "target_name": "명나라 효릉",
+          "description": "홍릉·유릉 조영에 영향을 준 명 태조 효릉의 제도"
+        }
+      ],
+      "created_at": "2026-01-12T10:28:01+09:00",
+      "updated_at": "2026-01-12T10:28:01+09:00"
+    },
+    {
+      "id": "hist_0022",
+      "name": "홍릉",
+      "entity_type": "Location",
+      "era": "대한제국",
+      "summary": "고종과 명성황후의 합장릉",
+      "description": "대한제국 제1대 황제 고종과 명성황후의 무덤으로, 명나라 태조 효릉과 조선왕릉 제도를 결합한 독특한 형식을 가짐. 병풍석, 침전, 문·무석인, 기린·코끼리·사자·낙타 상 등이 설치됨.",
+      "tags": [
+        "무덤",
+        "대한제국",
+        "조선왕릉",
+        "명성황후",
+        "고종"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "홍릉의 주인공"
+        },
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "명성황후",
+          "description": "홍릉의 주인공"
+        }
+      ],
+      "created_at": "2026-01-12T10:35:50+09:00",
+      "updated_at": "2026-01-12T10:35:50+09:00"
+    },
+    {
+      "id": "hist_0023",
+      "name": "고종",
+      "entity_type": "Person",
+      "era": "대한제국",
+      "summary": "대한제국 제1대 황제",
+      "description": "재위 기간 중 임오군란, 갑신정변, 을미사변 등을 겪었으며 1897년 대한제국 선포. 홍릉에 명성황후와 합장됨.",
+      "tags": [
+        "황제",
+        "대한제국",
+        "홍릉"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Enemy",
+          "target_id": null,
+          "target_name": "일본",
+          "description": "명성황후 살해 사건(을미사변) 관련"
+        }
+      ],
+      "created_at": "2026-01-12T10:35:52+09:00",
+      "updated_at": "2026-01-12T10:35:52+09:00"
+    },
+    {
+      "id": "hist_0024",
+      "name": "명성황후",
+      "entity_type": "Person",
+      "era": "대한제국",
+      "summary": "대한제국 고종의 비",
+      "description": "을미사변 때 일본인에 의해 살해된 비운의 왕비. 청량리에 안장되었다가 후에 홍릉에 합장됨.",
+      "tags": [
+        "왕비",
+        "대한제국",
+        "홍릉",
+        "을미사변"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Enemy",
+          "target_id": null,
+          "target_name": "일본",
+          "description": "을미사변 시 살해"
+        }
+      ],
+      "created_at": "2026-01-12T10:35:54+09:00",
+      "updated_at": "2026-01-12T10:35:54+09:00"
+    },
+    {
+      "id": "hist_0025",
+      "name": "유릉",
+      "entity_type": "Location",
+      "era": "대한제국",
+      "summary": "순종, 순명효황후, 순정효황후의 합장릉",
+      "description": "조선왕릉 중 유일하게 한 봉우리에 3개의 방을 만든 동봉삼실릉. 홍릉과 유사한 형식으로 침전, 문·무석인, 기린·코끼리·사자 상 등이 설치됨.",
+      "tags": [
+        "무덤",
+        "대한제국",
+        "조선왕릉",
+        "순종"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "순종",
+          "description": "유릉의 주인공"
+        },
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "순명효황후",
+          "description": "유릉의 주인공"
+        },
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "순정효황후",
+          "description": "유릉의 주인공"
+        }
+      ],
+      "created_at": "2026-01-12T10:35:58+09:00",
+      "updated_at": "2026-01-12T10:35:58+09:00"
+    },
+    {
+      "id": "hist_0026",
+      "name": "순종",
+      "entity_type": "Person",
+      "era": "대한제국",
+      "summary": "대한제국의 마지막 황제",
+      "description": "유릉에 순명효황후, 순정효황후와 합장됨.",
+      "tags": [
+        "황제",
+        "대한제국",
+        "유릉"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "유릉",
+          "description": "순종의 무덤"
+        }
+      ],
+      "created_at": "2026-01-12T10:36:00+09:00",
+      "updated_at": "2026-01-12T10:36:00+09:00"
+    },
+    {
+      "id": "hist_0027",
+      "name": "임오군란",
+      "entity_type": "Event",
+      "era": "조선 후기",
+      "summary": "1882년 발생한 군란 사건",
+      "description": "고종 재위 기간 중 발생한 정변 중 하나.",
+      "tags": [
+        "사건",
+        "조선",
+        "고종"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "임오군란 당시 재위 중인 군주"
+        }
+      ],
+      "created_at": "2026-01-12T10:36:03+09:00",
+      "updated_at": "2026-01-12T10:36:03+09:00"
+    },
+    {
+      "id": "hist_0028",
+      "name": "갑신정변",
+      "entity_type": "Event",
+      "era": "조선 후기",
+      "summary": "1884년 발생한 정변",
+      "description": "고종 재위 기간 중 발생한 정변 중 하나.",
+      "tags": [
+        "사건",
+        "조선",
+        "고종"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "갑신정변 당시 재위 중인 군주"
+        }
+      ],
+      "created_at": "2026-01-12T10:36:05+09:00",
+      "updated_at": "2026-01-12T10:36:05+09:00"
+    },
+    {
+      "id": "hist_0029",
+      "name": "을미사변",
+      "entity_type": "Event",
+      "era": "조선 후기",
+      "summary": "1895년 명성황후 살해 사건",
+      "description": "일본인에 의해 명성황후가 무참히 살해된 사건.",
+      "tags": [
+        "사건",
+        "조선",
+        "명성황후",
+        "일본"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "명성황후",
+          "description": "을미사변의 피해자"
+        },
+        {
+          "relation_type": "Enemy",
+          "target_id": null,
+          "target_name": "일본",
+          "description": "을미사변 가해자"
+        }
+      ],
+      "created_at": "2026-01-12T10:36:09+09:00",
+      "updated_at": "2026-01-12T10:36:09+09:00"
+    },
+    {
+      "id": "hist_0030",
+      "name": "청량리",
+      "entity_type": "Location",
+      "era": "조선 후기",
+      "summary": "명성황후의 초기 무덤 소재지",
+      "description": "풍수지리상 불길하다 하여 후에 홍릉으로 이장됨.",
+      "tags": [
+        "장소",
+        "조선",
+        "명성황후"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "명성황후",
+          "description": "청량리에 초기 안장된 왕비"
+        }
+      ],
+      "created_at": "2026-01-12T10:36:13+09:00",
+      "updated_at": "2026-01-12T10:36:13+09:00"
+    },
+    {
+      "id": "hist_0031",
+      "name": "British Empire",
+      "entity_type": "Organization",
+      "era": "19~20세기 초반",
+      "summary": "역사상 최대 규모의 식민지 제국",
+      "description": "19세기 말~20세기 초 세계 인구·영토의 1/4 지배. '해가 지지 않는 제국'으로 불림.",
+      "tags": [
+        "고종",
+        "식민지 제국",
+        "대한제국",
+        "세계史",
+        "역사",
+        "조선",
+        "국가",
+        "제국주의"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "고종",
+          "description": "대한제국 초대 황제"
+        },
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "홍릉",
+          "description": "대한제국의 황제릉 양식 반영"
+        },
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "유릉",
+          "description": "대한제국의 마지막 황제릉"
+        }
+      ],
+      "created_at": "2026-01-12T10:36:16+09:00",
+      "updated_at": "2026-01-12T14:02:17+09:00"
+    },
+    {
+      "id": "hist_0032",
+      "name": "순명효황후",
+      "entity_type": "Person",
+      "era": "대한제국",
+      "summary": "순종의 비",
+      "description": "유릉에 순종과 합장된 황후.",
+      "tags": [
+        "왕비",
+        "대한제국",
+        "유릉"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "유릉",
+          "description": "순명효황후의 무덤"
+        }
+      ],
+      "created_at": "2026-01-12T10:36:19+09:00",
+      "updated_at": "2026-01-12T10:36:19+09:00"
+    },
+    {
+      "id": "hist_0033",
+      "name": "순정효황후",
+      "entity_type": "Person",
+      "era": "대한제국",
+      "summary": "순종의 비",
+      "description": "유릉에 순종과 합장된 황후.",
+      "tags": [
+        "왕비",
+        "대한제국",
+        "유릉"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Participant",
+          "target_id": null,
+          "target_name": "유릉",
+          "description": "순정효황후의 무덤"
+        }
+      ],
+      "created_at": "2026-01-12T10:36:23+09:00",
+      "updated_at": "2026-01-12T10:36:23+09:00"
+    },
+    {
+      "id": "hist_0034",
+      "name": "주먹도끼",
+      "entity_type": "Artifact",
+      "era": "구석기시대",
+      "summary": "양면핵석기",
+      "description": "구석기시대 양 면에서 격지를 떼어 만든 석기. 동아시아 지역에 맞는 독자적 분류 체계가 필요함.",
+      "tags": [
+        "도구",
+        "구석기",
+        "동아시아",
+        "석기",
+        "구석기시대"
+      ],
+      "sources": [],
+      "related_entities": [],
+      "created_at": "2026-01-12T10:54:30+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0035",
+      "name": "명나라",
+      "entity_type": "Organization",
+      "era": "1368년~1644년",
+      "summary": "중국의 통일 왕조",
+      "description": "홍릉 조성에 참고된 명나라 태조 효릉의 무덤 제도를 참고함.",
+      "tags": [
+        "왕조",
+        "역사",
+        "명나라"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Influence",
+          "target_id": null,
+          "target_name": "홍릉",
+          "description": "홍릉 조성에 영향"
+        }
+      ],
+      "created_at": "2026-01-12T13:31:21+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0036",
+      "name": "조선왕릉",
+      "entity_type": "Location",
+      "era": "조선",
+      "summary": "조선 왕조의 왕릉",
+      "description": "홍릉과 유릉은 조선왕릉 제도와 명나라 제도를 결합하여 조성됨.",
+      "tags": [
+        "왕릉",
+        "조선",
+        "문화유산"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Influence",
+          "target_id": null,
+          "target_name": "홍릉",
+          "description": "홍릉 조성에 영향"
+        },
+        {
+          "relation_type": "Influence",
+          "target_id": null,
+          "target_name": "유릉",
+          "description": "유릉 조성에 영향"
+        }
+      ],
+      "created_at": "2026-01-12T13:31:21+09:00",
+      "updated_at": "2026-01-12T13:31:21+09:00"
+    },
+    {
+      "id": "hist_0037",
+      "name": "United Kingdom of Great Britain and Northern Ireland",
+      "entity_type": "Organization",
+      "era": "현대 (20세기~현재)",
+      "summary": "유럽 본토 북서쪽 섬나라, 입헌군주제 단일 국가",
+      "description": "잉글랜드, 스코틀랜드, 웨일스, 북아일랜드 4개 구성국이 연합한 국가. 수도는 런던이며, UN 안보리 상임이사국·핵무기 보유국·G7 회원국. 산업혁명 발상지이자 과거 대영제국으로 전성기 누림.",
+      "tags": [
+        "입헌군주제",
+        "UN 상임이사국",
+        "G7",
+        "산업혁명",
+        "대영제국"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Capital",
+          "target_id": null,
+          "target_name": "런던",
+          "description": "영국의 수도"
+        },
+        {
+          "relation_type": "ConstituentCountry",
+          "target_id": null,
+          "target_name": "잉글랜드",
+          "description": "그레이트브리튼섬 남부에 위치"
+        },
+        {
+          "relation_type": "ConstituentCountry",
+          "target_id": null,
+          "target_name": "스코틀랜드",
+          "description": "그레이트브리튼섬 북부에 위치, 수도 에든버러"
+        },
+        {
+          "relation_type": "ConstituentCountry",
+          "target_id": null,
+          "target_name": "웨일스",
+          "description": "그레이트브리튼섬 서부에 위치, 수도 카디프"
+        },
+        {
+          "relation_type": "ConstituentCountry",
+          "target_id": null,
+          "target_name": "북아일랜드",
+          "description": "아일랜드섬 북동부 영국 영토, 수도 벨파스트"
+        }
+      ],
+      "created_at": "2026-01-12T14:02:17+09:00",
+      "updated_at": "2026-01-12T14:02:17+09:00"
+    },
+    {
+      "id": "hist_0038",
+      "name": "London",
+      "entity_type": "Location",
+      "era": "현대",
+      "summary": "영국의 수도이자 최대 도시",
+      "description": "영국 정치·경제·문화의 중심지. 영국 의회와 왕실 소재지.",
+      "tags": [
+        "수도",
+        "정치 중심지",
+        "금융 중심지"
+      ],
+      "sources": [],
+      "related_entities": [],
+      "created_at": "2026-01-12T14:02:17+09:00",
+      "updated_at": "2026-01-12T14:02:17+09:00"
+    },
+    {
+      "id": "hist_0039",
+      "name": "Edinburgh",
+      "entity_type": "Location",
+      "era": "현대",
+      "summary": "스코틀랜드의 수도",
+      "description": "스코틀랜드 문화·행정 중심지. 유네스코 세계문화유산 보유.",
+      "tags": [
+        "수도",
+        "문화 유산"
+      ],
+      "sources": [],
+      "related_entities": [],
+      "created_at": "2026-01-12T14:02:17+09:00",
+      "updated_at": "2026-01-12T14:02:17+09:00"
+    },
+    {
+      "id": "hist_0040",
+      "name": "Cardiff",
+      "entity_type": "Location",
+      "era": "현대",
+      "summary": "웨일스의 수도",
+      "description": "웨일스 정치·경제 중심지. 영국 주요 항구 도시 중 하나.",
+      "tags": [
+        "수도",
+        "항구 도시"
+      ],
+      "sources": [],
+      "related_entities": [],
+      "created_at": "2026-01-12T14:02:17+09:00",
+      "updated_at": "2026-01-12T14:02:17+09:00"
+    },
+    {
+      "id": "hist_0041",
+      "name": "Belfast",
+      "entity_type": "Location",
+      "era": "현대",
+      "summary": "북아일랜드의 수도",
+      "description": "북아일랜드 최대 도시이자 산업·관광 중심지. 타이타닉호 건조지.",
+      "tags": [
+        "수도",
+        "산업 도시"
+      ],
+      "sources": [],
+      "related_entities": [],
+      "created_at": "2026-01-12T14:02:17+09:00",
+      "updated_at": "2026-01-12T14:02:17+09:00"
+    },
+    {
+      "id": "hist_0042",
+      "name": "Northern Ireland",
+      "entity_type": "Location",
+      "era": "현대",
+      "summary": "아일랜드섬 북동부 영국 영토",
+      "description": "아일랜드 공화국과 국경을 접함. 영국 왕실속령과 구분됨.",
+      "tags": [
+        "영국 구성국",
+        "분쟁 지역"
+      ],
+      "sources": [],
+      "related_entities": [],
+      "created_at": "2026-01-12T14:02:17+09:00",
+      "updated_at": "2026-01-12T14:02:17+09:00"
+    },
+    {
+      "id": "hist_0043",
+      "name": "Crown Dependencies",
+      "entity_type": "Organization",
+      "era": "현대",
+      "summary": "영국 본토 외부 왕실 직할 영토",
+      "description": "건지섬·저지섬·맨섬 포함. 영국 정부는 외교·국방을 담당하나 자치권 보유.",
+      "tags": [
+        "자치령",
+        "해외 영토"
+      ],
+      "sources": [],
+      "related_entities": [],
+      "created_at": "2026-01-12T14:02:17+09:00",
+      "updated_at": "2026-01-12T14:02:17+09:00"
+    },
+    {
+      "id": "hist_0044",
+      "name": "Industrial Revolution",
+      "entity_type": "Event",
+      "era": "18~19세기",
+      "summary": "영국에서 시작된 근대 산업화 운동",
+      "description": "기계화·공장제 확산. 철도·증기기관 등 기술 혁신으로 사회 구조 변화.",
+      "tags": [
+        "경제 사건",
+        "기술 혁신"
+      ],
+      "sources": [],
+      "related_entities": [],
+      "created_at": "2026-01-12T14:02:17+09:00",
+      "updated_at": "2026-01-12T14:02:17+09:00"
+    },
+    {
+      "id": "hist_0045",
+      "name": "The Beatles",
+      "entity_type": "Organization",
+      "era": "20세기",
+      "summary": "영국 출신 세계적 록 밴드",
+      "description": "1960년대 대중음악 혁명 주도. 롤링 스톤스·레드 제플린·퀸과 함께 영국 음악 산업 글로벌 영향력 확대.",
+      "tags": [
+        "대중음악",
+        "문화 아이콘"
+      ],
+      "sources": [],
+      "related_entities": [],
+      "created_at": "2026-01-12T14:02:17+09:00",
+      "updated_at": "2026-01-12T14:02:17+09:00"
+    },
+    {
+      "id": "hist_0046",
+      "name": "UN Security Council",
+      "entity_type": "Organization",
+      "era": "현대",
+      "summary": "국제연합의 주요 의사결정 기구",
+      "description": "5개 상임이사국(미국·영국·프랑스·러시아·중국)이 거부권 보유. 영국은 1945년부터 상임이사국.",
+      "tags": [
+        "국제기구",
+        "정치"
+      ],
+      "sources": [],
+      "related_entities": [],
+      "created_at": "2026-01-12T14:02:17+09:00",
+      "updated_at": "2026-01-12T14:02:17+09:00"
+    },
+    {
+      "id": "hist_0047",
+      "name": "Royal Dutch Shell",
+      "entity_type": "Organization",
+      "era": "현대",
+      "summary": "영국-네덜란드 합작 다국적 에너지 기업",
+      "description": "2023년 시가총액 기준 세계 50대 기업. 영국 본사 소재지.",
+      "tags": [
+        "다국적 기업",
+        "에너지"
+      ],
+      "sources": [],
+      "related_entities": [],
+      "created_at": "2026-01-12T14:02:17+09:00",
+      "updated_at": "2026-01-12T14:02:17+09:00"
+    },
+    {
+      "id": "hist_0048",
+      "name": "조지프 리스터 남작",
+      "entity_type": "Person",
+      "era": "19세기 영국",
+      "summary": "무균수술법을 확립한 영국의 외과의사",
+      "description": "조지프 리스터(1827-1912)는 현대 외과 수술의 아버지로 불리며, 유니버시티 칼리지 런던(UCL) 재직 시절 무균수술법을 개발하여 수술 감염률을 획기적으로 낮춤. 1867년 방부 체계 이론을 체계화했으며, 혈액 응고 및 염증 연구로 의학 발전에 기여.",
+      "tags": [
+        "의학",
+        "외과",
+        "무균수술",
+        "영국",
+        "과학자"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Creator",
+          "target_id": null,
+          "target_name": "무균수술법",
+          "description": "조지프 리스터가 개발한 현대 외과학의 핵심 기법"
+        },
+        {
+          "relation_type": "Workplace",
+          "target_id": null,
+          "target_name": "유니버시티 칼리지 런던(UCL)",
+          "description": "무균수술법을 개발한 소속 기관"
+        },
+        {
+          "relation_type": "Author",
+          "target_id": null,
+          "target_name": "1867년 방부 체계 저서",
+          "description": "방부 수술 이론을 체계화한 주요 논문"
+        }
+      ],
+      "created_at": "2026-01-12T14:03:11+09:00",
+      "updated_at": "2026-01-12T14:03:11+09:00"
+    },
+    {
+      "id": "hist_0049",
+      "name": "무균수술법",
+      "entity_type": "Artifact",
+      "era": "19세기",
+      "summary": "수술 시 감염을 방지하기 위한 의학적 기법",
+      "description": "조지프 리스터가 1860년대 개발한 수술법으로, 소독제 사용과 무균 환경 조성 통해 수술 후 감염률을 50%에서 극적으로 감소시킴. 현대 외과학의 기반이 된 혁신 기술.",
+      "tags": [
+        "의학 기술",
+        "외과",
+        "감염 예방",
+        "과학 혁명"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Creator",
+          "target_id": null,
+          "target_name": "조지프 리스터",
+          "description": "무균수술법의 창시자"
+        }
+      ],
+      "created_at": "2026-01-12T14:03:11+09:00",
+      "updated_at": "2026-01-12T14:03:11+09:00"
+    },
+    {
+      "id": "hist_0050",
+      "name": "유니버시티 칼리지 런던(UCL)",
+      "entity_type": "Organization",
+      "era": "19세기 영국",
+      "summary": "무균수술법이 개발된 영국의 명문 대학",
+      "description": "조지프 리스터가 재직하며 무균수술법을 연구한 영국 런던의 대학. 의학 및 과학 분야에서 선구적인 연구를 수행한 기관으로 유명.",
+      "tags": [
+        "교육 기관",
+        "영국",
+        "의학 연구"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "Employee",
+          "target_id": null,
+          "target_name": "조지프 리스터",
+          "description": "UCL에서 근무하며 무균수술법을 개발"
+        }
+      ],
+      "created_at": "2026-01-12T14:03:12+09:00",
+      "updated_at": "2026-01-12T14:03:12+09:00"
     }
   ]
 }
