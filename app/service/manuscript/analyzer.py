@@ -252,7 +252,7 @@ class ManuscriptAnalyzer:
         """
         try:
             response = self.llm.invoke([SystemMessage(content=prompt)])
-            return json.loads(self._clean_json_string(response.content))
+            return self._clean_json_string(response.content)
         except:
             # 에러 나면 일단 통과 (False Negative 방지)
             return {"is_relevant": True, "reason": "검증 실패(Pass)"}
@@ -274,5 +274,34 @@ class ManuscriptAnalyzer:
             return []
 
     def _clean_json_string(self, text: str) -> str:
-        """JSON 디코딩을 위한 문자열 정리"""
-        return text.replace("```json", "").replace("```", "").strip()
+        """
+                [수정됨] 입력이 이미 Dict라면 그대로 반환하고,
+                String이라면 JSON 구간만 추출하여 파싱합니다.
+                (TypeError 방지용 방어 코드 포함)
+                """
+        # 1. 입력이 이미 딕셔너리(Dict)라면 파싱할 필요 없이 바로 반환
+        if isinstance(text, dict):
+            return text
+
+        # 2. 문자열이 아니라면(None 등) 빈 Dict 반환
+        if not isinstance(text, str):
+            return {}
+
+        try:
+            # 3. 마크다운 및 공백 제거
+            text = text.replace("```json", "").replace("```", "").strip()
+
+            # 4. 가장 바깥쪽 {} 찾기 (사족 제거)
+            start_idx = text.find('{')
+            end_idx = text.rfind('}')
+
+            if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+                json_str = text[start_idx : end_idx + 1]
+                return json.loads(json_str)
+
+            # 5. 괄호가 없으면 전체 파싱 시도
+            return json.loads(text)
+
+        except Exception:
+            # 파싱 실패 시 빈 딕셔너리 반환
+            return {}
