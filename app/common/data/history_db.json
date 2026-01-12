@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "version": 1,
+    "updated_at": "2026-01-12T09:11:42+09:00"
+  },
+  "entities": [
+    {
+      "id": "hist_0001",
+      "name": "훈민정음",
+      "entity_type": "Artifact",
+      "era": "1443년 (창제), 1446년 (반포)",
+      "summary": "세종대왕이 백성을 위해 창제한 문자",
+      "description": "조선의 4대 왕 세종이...",
+      "tags": [
+        "조선",
+        "세종",
+        "문자"
+      ],
+      "related_entities": [
+        {
+          "target_id": null,
+          "target_name": "세종",
+          "relation_type": "creator",
+          "description": "훈민정음을 창제한 왕"
+        }
+      ],
+      "created_at": "2026-01-11T15:30:00",
+      "updated_at": "2026-01-11T15:30:00"
+    },
+    {
+      "id": "hist_0002",
+      "name": "훈민정음",
+      "entity_type": "Artifact",
+      "era": "1443-1446",
+      "summary": "1443년 창제, 1446년 반포된 조선의 고유 문자 체계",
+      "description": "세종대왕이 창제한 조선의 고유 문자로 '백성을 가르치는 바른 소리'라는 의미를 지님. 한글 창제의 기반이 된 문자 체계",
+      "tags": [
+        "조선",
+        "문자",
+        "세종대왕",
+        "한글",
+        "문화유산"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "창제자",
+          "target_id": null,
+          "target_name": "세종대왕",
+          "description": "훈민정음 창제를 주도한 조선의 제4대 왕"
+        },
+        {
+          "relation_type": "후속 발전형",
+          "target_id": null,
+          "target_name": "한글",
+          "description": "훈민정음이 현대 한글로 계승 발전됨"
+        }
+      ],
+      "created_at": "2026-01-11T16:27:36+09:00",
+      "updated_at": "2026-01-11T16:27:36+09:00"
+    },
+    {
+      "id": "hist_0003",
+      "name": "동구릉",
+      "entity_type": "Location",
+      "era": "1408년(태종 8) ~ 19세기",
+      "summary": "조선 최대 왕릉군으로 7명의 왕과 10명의 왕비가 안장된 유네스코 세계문화유산",
+      "description": "동구릉(東九陵)은 경기도 구리시에 위치한 조선 왕릉군으로, 태조 건원릉(1408년)을 시작으로 450여 년간 9기의 능이 조성되었다. 문종 현릉, 선조 목릉, 현종 숭릉, 장렬왕후 휘릉, 단의왕후 혜릉, 영조 원릉, 헌종 경릉 등이 포함되며, 문조 수릉 이전 후 현재의 명칭이 확정되었다. 단릉·쌍릉·동원이강릉·합장릉·삼연릉 등 다양한 형식의 왕릉이 집적된 역사적 장소이다.",
+      "tags": [
+        "조선왕릉",
+        "유네스코세계문화유산",
+        "구리시",
+        "왕릉군"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "건원릉 조성자",
+          "target_id": null,
+          "target_name": "태조",
+          "description": "조선 건국자 태조 이성계의 능"
+        },
+        {
+          "relation_type": "현릉 조성자",
+          "target_id": null,
+          "target_name": "문종",
+          "description": "조선 제5대 왕 문종의 능"
+        },
+        {
+          "relation_type": "목릉 조성자",
+          "target_id": null,
+          "target_name": "선조",
+          "description": "조선 제14대 왕 선조의 능"
+        }
+      ],
+      "created_at": "2026-01-11T16:30:01+09:00",
+      "updated_at": "2026-01-11T20:13:30+09:00",
+      "status": "restore"
+    },
+    {
+      "id": "hist_0005",
+      "name": "훈민정음",
+      "entity_type": "Artifact",
+      "era": "1443-1446년",
+      "summary": "세종대왕이 창제한 조선의 고유 문자 체계",
+      "description": "1443년 창제되어 1446년 반포된 조선의 고유 문자로, '백성을 가르치는 바른 소리'라는 의미를 지님. 모음은 천(하늘)·지(땅)·인(사람)의 원리를, 자음은 발음 기관의 모양을 형상화하여 제작됨. 한글 창제의 기반이 된 문자 체계.",
+      "tags": [
+        "문자",
+        "조선",
+        "세종대왕",
+        "언어학",
+        "문화유산"
+      ],
+      "sources": [],
+      "related_entities": [
+        {
+          "relation_type": "창제자",
+          "target_id": null,
+          "target_name": "세종대왕",
+          "description": "훈민정음 창제 및 반포를 주도한 조선의 제4대 왕"
+        },
+        {
+          "relation_type": "후속 발전형",
+          "target_id": null,
+          "target_name": "한글",
+          "description": "훈민정음이 현대 한글로 계승·발전된 관계"
+        }
+      ],
+      "created_at": "2026-01-11T18:57:59+09:00",
+      "updated_at": "2026-01-11T18:57:59+09:00"
+    }
+  ]
+}
