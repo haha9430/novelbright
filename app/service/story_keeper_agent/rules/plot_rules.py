@@ -1,3 +1,4 @@
+# plot_rules.py
 from __future__ import annotations
 
 import json
@@ -56,6 +57,11 @@ def _get_full_text(episode_facts: Dict[str, Any]) -> str:
     return raw if isinstance(raw, str) and raw.strip() else ""
 
 
+def _get_history(story_state: Dict[str, Any]) -> Dict[str, Any]:
+    h = story_state.get("history", {})
+    return h if isinstance(h, dict) else {}
+
+
 def _is_leaf(v: Any) -> bool:
     return isinstance(v, (str, int, float, bool)) or v is None
 
@@ -68,64 +74,85 @@ def _stringify(v: Any) -> str:
     return str(v).strip()
 
 
-def _make_anchor_sentence(path: str, value: Any) -> str:
-    return f"{path} = {_stringify(value)}"
-
-
-def _build_anchors_from_json(obj: Any, prefix: str) -> List[str]:
+def _history_value_anchors(history: Dict[str, Any]) -> List[str]:
     anchors: List[str] = []
 
-    def walk(x: Any, p: str):
-        if _is_leaf(x):
-            anchors.append(_make_anchor_sentence(p, x))
-            return
+    for k in ("summary", "important_parts", "highlights", "key_points", "events"):
+        v = history.get(k)
+        if isinstance(v, list):
+            for x in v[:40]:
+                if _is_leaf(x):
+                    s = _stringify(x)
+                    if s and s != "null":
+                        anchors.append(s)
+        elif _is_leaf(v):
+            s = _stringify(v)
+            if s and s != "null":
+                anchors.append(s)
 
-        if isinstance(x, dict):
-            for k, v in x.items():
-                if not isinstance(k, str):
-                    continue
-                nk = k.strip()
-                if not nk:
-                    continue
-                walk(v, f"{p}.{nk}" if p else nk)
-            return
+    for vv in list(history.values())[:40]:
+        if isinstance(vv, dict):
+            for kk in ("summary", "important_parts"):
+                x = vv.get(kk)
+                if isinstance(x, list):
+                    for it in x[:12]:
+                        if _is_leaf(it):
+                            s = _stringify(it)
+                            if s and s != "null":
+                                anchors.append(s)
+                elif _is_leaf(x):
+                    s = _stringify(x)
+                    if s and s != "null":
+                        anchors.append(s)
 
-        if isinstance(x, list):
-            for idx, v in enumerate(x[:60]):
-                if _is_leaf(v):
-                    walk(v, f"{p}[{idx}]")
-                elif isinstance(v, dict):
-                    for kk in list(v.keys())[:12]:
-                        vv = v.get(kk)
-                        if _is_leaf(vv):
-                            walk(vv, f"{p}[{idx}].{kk}")
-            return
+    uniq: List[str] = []
+    seen = set()
+    for a in anchors:
+        if a in seen:
+            continue
+        seen.add(a)
+        uniq.append(a)
 
-    walk(obj, prefix)
-    return anchors
-
-
-def _get_history(story_state: Dict[str, Any]) -> Dict[str, Any]:
-    h = story_state.get("history", {})
-    return h if isinstance(h, dict) else {}
+    if len(uniq) > 160:
+        uniq = uniq[:160]
+    return uniq
 
 
-def _pick_plot_anchor_pool(history: Dict[str, Any], plot_config: Dict[str, Any]) -> List[str]:
+def _plot_value_anchors(plot_config: Dict[str, Any]) -> List[str]:
     anchors: List[str] = []
-    anchors += _build_anchors_from_json(history, "history")
+    if not isinstance(plot_config, dict):
+        return anchors
 
-    if isinstance(plot_config, dict):
-        small = {}
-        for k in ("theme", "premise", "constraints", "rules", "major_events", "forbidden", "must"):
-            v = plot_config.get(k)
-            if v is not None:
-                small[k] = v
-        if small:
-            anchors += _build_anchors_from_json(small, "plot")
+    for k in ("theme", "premise", "constraints", "rules", "major_events", "forbidden", "must"):
+        v = plot_config.get(k)
+        if isinstance(v, list):
+            for x in v[:40]:
+                if _is_leaf(x):
+                    s = _stringify(x)
+                    if s and s != "null":
+                        anchors.append(s)
+        elif _is_leaf(v):
+            s = _stringify(v)
+            if s and s != "null":
+                anchors.append(s)
+        elif isinstance(v, dict):
+            for vv in list(v.values())[:40]:
+                if _is_leaf(vv):
+                    s = _stringify(vv)
+                    if s and s != "null":
+                        anchors.append(s)
 
-    if len(anchors) > 200:
-        anchors = anchors[:200]
-    return anchors
+    uniq: List[str] = []
+    seen = set()
+    for a in anchors:
+        if a in seen:
+            continue
+        seen.add(a)
+        uniq.append(a)
+
+    if len(uniq) > 140:
+        uniq = uniq[:140]
+    return uniq
 
 
 def check_plot_consistency(
@@ -138,7 +165,11 @@ def check_plot_consistency(
         return []
 
     history = _get_history(story_state)
-    anchors = _pick_plot_anchor_pool(history, plot_config)
+
+    anchors: List[str] = []
+    anchors += _history_value_anchors(history)
+    anchors += _plot_value_anchors(plot_config)
+
     if not anchors:
         return []
 
@@ -146,26 +177,25 @@ def check_plot_consistency(
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """
-너는 ‘원고-연속성/플롯(JSON) 비교기’다.
-외부 상식/현실/역사/고증 판단을 절대 하지 않는다.
+너는 ‘원고-플롯/연속성 비교기’다.
+외부 상식/현실/역사/고증 판단은 절대 하지 않는다.
+오직 anchors(이전 요약/플롯 규칙)와 원고만 본다.
 
-[판정]
-- anchors를 정면으로 뒤집는 경우만 이슈 생성.
-- JSON에 없는 정보는 오류 아님.
-- 서술 순서/요약 차이는 오류 아님.
-- 작가 의도에 대한 훈계/강요 금지.
-
-[reason(2줄 고정)]
-json_anchor: "<충돌한 앵커 1줄 그대로>"
-conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
-
-[rewrite]
-- 충돌만 제거하는 최소 수정 1문장
+[판정 기준]
+- '정면 부정'뿐 아니라, 원고가 anchors와 '서로 배타적인 다른 사실'을 확정적으로 말하면 이슈.
+  예) "A가 죽었다"가 요약에 고정인데 원고에서 "A는 살아있다"를 확정 서술하는 경우
+- anchors에 없는 정보는 오류 아님.
+- 서술 순서/압축/요약 차이는 오류 아님.
+- 애매한 표현(가능성/추측/비유/꿈/회상)은 오류로 잡지 말 것.
 
 [출력(JSON only)]
-{{ "issues": [ {{ "type":"plot|continuity", "title","sentence","reason","rewrite","severity" }} ] }}
+{{ "issues": [ {{ "type": "plot|continuity", "title": "...", "sentence": "...", "reason": "...", "severity": "low|medium|high" }} ] }}
 없으면:
 {{ "issues": [] }}
+
+[reason 작성]
+- history.xxx 같은 경로/키 쓰지 말고 사람이 읽는 문장으로.
+- 1~2줄로: "이전 전개/규칙에서는 A인데 원고 문장은 B로 확정 서술되어 충돌"
 """),
         ("human", """[anchors]
 {anchors}
@@ -187,8 +217,7 @@ conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
             type="plot",
             title="플롯 룰 검사 실패",
             sentence="(원고 전체)",
-            reason="json_anchor: <none>\nconflict: LLM 호출/파싱 실패",
-            rewrite=repr(e),
+            reason=f"LLM 호출/파싱 실패: {repr(e)}",
             severity="high",
         )]
 
@@ -207,8 +236,7 @@ conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
             continue
 
         reason = str(it.get("reason") or "").strip()
-        rewrite = str(it.get("rewrite") or "").strip()
-        if not reason or not rewrite:
+        if not reason:
             continue
 
         sev = str(it.get("severity") or "medium").lower()
@@ -221,10 +249,9 @@ conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
 
         out.append(Issue(
             type=t,
-            title=str(it.get("title") or "플롯/연속성 앵커 충돌"),
+            title=str(it.get("title") or "플롯/연속성 충돌"),
             sentence=sentence,
             reason=reason,
-            rewrite=rewrite,
             severity=sev,
         ))
 

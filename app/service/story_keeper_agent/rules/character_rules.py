@@ -1,3 +1,4 @@
+# character_rules.py
 from __future__ import annotations
 
 import json
@@ -68,43 +69,6 @@ def _stringify(v: Any) -> str:
     return str(v).strip()
 
 
-def _make_anchor_sentence(path: str, value: Any) -> str:
-    return f"{path} = {_stringify(value)}"
-
-
-def _build_anchors_from_json(obj: Any, prefix: str) -> List[str]:
-    anchors: List[str] = []
-
-    def walk(x: Any, p: str):
-        if _is_leaf(x):
-            anchors.append(_make_anchor_sentence(p, x))
-            return
-
-        if isinstance(x, dict):
-            for k, v in x.items():
-                if not isinstance(k, str):
-                    continue
-                nk = k.strip()
-                if not nk:
-                    continue
-                walk(v, f"{p}.{nk}" if p else nk)
-            return
-
-        if isinstance(x, list):
-            for idx, v in enumerate(x[:60]):
-                if _is_leaf(v):
-                    walk(v, f"{p}[{idx}]")
-                elif isinstance(v, dict):
-                    for kk in list(v.keys())[:12]:
-                        vv = v.get(kk)
-                        if _is_leaf(vv):
-                            walk(vv, f"{p}[{idx}].{kk}")
-            return
-
-    walk(obj, prefix)
-    return anchors
-
-
 def _normalize_character_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(cfg, dict):
         return {"characters": []}
@@ -125,12 +89,11 @@ def _pick_character_anchor_pool(character_config: Dict[str, Any]) -> List[str]:
         name = ch.get("name")
         name_tag = str(name).strip() if isinstance(name, str) and name.strip() else f"idx{i}"
 
-        # 성격/감정 태클 방지: 하드팩트 위주
         hard_keys = [
-            "name", "gender", "age", "birth", "death", "is_alive",
+            "name", "age", "gender", "age_gender",
+            "birth", "death", "is_alive",
+            "job_status", "rank", "status", "identity",
             "injury", "missing_parts", "scar", "disability",
-            "family", "parents", "siblings", "lover", "spouse",
-            "rank", "status", "identity",
         ]
 
         picked = {}
@@ -141,16 +104,20 @@ def _pick_character_anchor_pool(character_config: Dict[str, Any]) -> List[str]:
         if not picked:
             leaf_count = 0
             for k, v in ch.items():
-                if leaf_count >= 10:
+                if leaf_count >= 8:
                     break
                 if _is_leaf(v):
                     picked[k] = v
                     leaf_count += 1
 
-        anchors += _build_anchors_from_json(picked, f"character[{name_tag}]")
+        for k, v in picked.items():
+            s = _stringify(v)
+            if not s or s == "null":
+                continue
+            anchors.append(f"{name_tag} - {k}: {s}")
 
-    if len(anchors) > 160:
-        anchors = anchors[:160]
+    if len(anchors) > 180:
+        anchors = anchors[:180]
     return anchors
 
 
@@ -173,31 +140,25 @@ def check_character_consistency(
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """
-너는 ‘원고-캐릭터(JSON) 비교기’다.
-외부 상식/현실/심리 추론을 절대 하지 않는다.
+너는 ‘원고-캐릭터 설정 비교기’다.
+외부 상식/현실/심리 추론은 절대 하지 않는다.
+오직 anchors(캐릭터 확정 설정)와 원고만 본다.
 
-[판정]
-- anchors를 "정면으로 뒤집는 경우"만 이슈 생성.
-- JSON에 없는 정보는 오류 아님.
-- 성격/기분/직업 디테일/병명 언급으로 태클 금지.
-- 작가 의도/연출/서술순서/정보 은닉은 오류 아님.
-
-[2차 검증]
-- 없어서 오류면 버려라
-- 단순 톤/감정 차이면 버려라
-- 인물의 일시적 반응(화남/긴장 등)으로 태클이면 버려라
-
-[reason(2줄 고정)]
-json_anchor: "<충돌한 앵커 1줄 그대로>"
-conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
-
-[rewrite]
-- 충돌만 제거하는 최소 수정 1문장
+[판정 기준]
+- '정면 부정'뿐 아니라, 원고가 설정과 '서로 배타적인 다른 사실'을 확정적으로 말하면 이슈.
+  예) 성별/나이/직업 상태/생사 같이 동시에 성립 불가한 값이 원고에서 확정될 때
+- anchors에 없는 정보는 오류 아님.
+- 성격/기분/말투/감정 묘사로 태클 금지.
+- 애매한 표현(가능성/추측/비유/꿈/회상)은 오류로 잡지 말 것.
 
 [출력(JSON only)]
-{{ "issues": [ {{ "title","sentence","reason","rewrite","severity" }} ] }}
+{{ "issues": [ {{ "title": "...", "sentence": "...", "reason": "...", "severity": "low|medium|high" }} ] }}
 없으면:
 {{ "issues": [] }}
+
+[reason 작성]
+- 경로/키 같은 기술적 표기 쓰지 말고 사람이 읽는 문장으로.
+- 1~2줄로: "설정에서는 A인데 원고 문장은 B로 확정 서술되어 충돌"
 """),
         ("human", """[anchors]
 {anchors}
@@ -219,8 +180,7 @@ conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
             type="character",
             title="캐릭터 룰 검사 실패",
             sentence="(원고 전체)",
-            reason="json_anchor: <none>\nconflict: LLM 호출/파싱 실패",
-            rewrite=repr(e),
+            reason=f"LLM 호출/파싱 실패: {repr(e)}",
             severity="high",
         )]
 
@@ -239,8 +199,7 @@ conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
             continue
 
         reason = str(it.get("reason") or "").strip()
-        rewrite = str(it.get("rewrite") or "").strip()
-        if not reason or not rewrite:
+        if not reason:
             continue
 
         sev = str(it.get("severity") or "medium").lower()
@@ -249,10 +208,9 @@ conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
 
         out.append(Issue(
             type="character",
-            title=str(it.get("title") or "캐릭터 앵커 충돌"),
+            title=str(it.get("title") or "캐릭터 설정 충돌"),
             sentence=sentence,
             reason=reason,
-            rewrite=rewrite,
             severity=sev,
         ))
 

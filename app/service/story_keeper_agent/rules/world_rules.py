@@ -1,3 +1,4 @@
+# world_rules.py
 from __future__ import annotations
 
 import json
@@ -78,47 +79,31 @@ def _stringify(v: Any) -> str:
     return str(v).strip()
 
 
-def _make_anchor_sentence(path: str, value: Any) -> str:
-    return f"{path} = {_stringify(value)}"
-
-
-def _build_anchors_from_json(obj: Any, prefix: str) -> List[str]:
+def _build_value_anchors(obj: Any) -> List[str]:
     anchors: List[str] = []
 
-    def walk(x: Any, p: str):
+    def walk(x: Any):
         if _is_leaf(x):
-            anchors.append(_make_anchor_sentence(p, x))
+            s = _stringify(x)
+            if s and s != "null":
+                anchors.append(s)
             return
 
         if isinstance(x, dict):
-            for k, v in x.items():
-                if not isinstance(k, str):
-                    continue
-                nk = k.strip()
-                if not nk:
-                    continue
-                walk(v, f"{p}.{nk}" if p else nk)
+            for _, v in list(x.items())[:80]:
+                walk(v)
             return
 
         if isinstance(x, list):
-            for idx, v in enumerate(x[:60]):
-                if _is_leaf(v):
-                    walk(v, f"{p}[{idx}]")
-                elif isinstance(v, dict):
-                    for kk in list(v.keys())[:12]:
-                        vv = v.get(kk)
-                        if _is_leaf(vv):
-                            walk(vv, f"{p}[{idx}].{kk}")
+            for v in x[:80]:
+                walk(v)
             return
 
-    walk(obj, prefix)
-    return anchors
+    walk(obj)
 
-
-def _pick_world_anchor_pool(world: Dict[str, Any]) -> List[str]:
-    anchors = _build_anchors_from_json(world, "world")
-    if len(anchors) > 180:
-        anchors = anchors[:180]
+    anchors = [a for a in anchors if isinstance(a, str) and a.strip()]
+    if len(anchors) > 160:
+        anchors = anchors[:160]
     return anchors
 
 
@@ -134,7 +119,7 @@ def check_world_consistency(
     if not world:
         return []
 
-    anchors = _pick_world_anchor_pool(world)
+    anchors = _build_value_anchors(world)
     if not anchors:
         return []
 
@@ -142,42 +127,25 @@ def check_world_consistency(
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """
-너는 ‘원고-세계관(JSON) 비교기’다.
-외부 상식/현실/역사/고증 판단을 절대 하지 않는다.
+너는 ‘원고-세계관 비교기’다.
+외부 상식/현실/역사/고증 판단은 절대 하지 않는다.
+오직 anchors(세계관 확정 사실)와 원고만 본다.
 
-[입력]
-- anchors: JSON에서 추출한 확정 앵커 문장 목록
-- manuscript: 원고 전문
-
-[판정]
-- anchors에 있는 내용만 기준.
-- 원고가 anchors를 "정면으로 뒤집는 경우"만 이슈 생성.
-- JSON에 없는 정보는 오류 아님.
-- 연출/서술순서/정보은닉은 오류 아님.
-
-[금지]
-- '없어서 오류' 금지
-- 외부 지식/고증 언급 금지
-- 평가/비판/추측 금지
-
-[2차 검증]
-- 없어서 오류면 버려라
-- 단순 요약 차이면 버려라
-- 작가 의도에 태클이면 버려라
-- rewrite가 재집필이면 버려라
-
-[reason(2줄 고정)]
-json_anchor: "<충돌한 앵커 1줄 그대로>"
-conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
-
-[rewrite]
-- 충돌만 제거하는 최소 수정 1문장(재작성 금지)
+[판정 기준]
+- '정면 부정' 뿐 아니라, 원고가 anchors와 '서로 배타적인 다른 사실'을 확정적으로 말하면 이슈.
+  예) "과거로 이동" vs "미래로 이동", "성인 신체" vs "어린아이 신체" 같이 동시에 성립 불가한 경우
+- anchors에 없는 정보는 오류 아님.
+- 연출/서술순서/정보은닉/요약 차이는 오류 아님.
+- 애매한 표현(가능성/추측/비유/꿈/회상)은 오류로 잡지 말 것.
 
 [출력(JSON only)]
-반드시 JSON만 출력:
-{{ "issues": [ {{ "title","sentence","reason","rewrite","severity" }} ] }}
+{{ "issues": [ {{ "title": "...", "sentence": "...", "reason": "...", "severity": "low|medium|high" }} ] }}
 없으면:
 {{ "issues": [] }}
+
+[reason 작성]
+- 경로/키(history.xxx 같은 거) 쓰지 말고 사람이 읽는 문장으로.
+- 1~2줄로 간단히: "세계관에서는 A로 고정인데, 원고 문장은 B로 확정 서술되어 충돌" 형태.
 """),
         ("human", """[anchors]
 {anchors}
@@ -199,8 +167,7 @@ conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
             type="world",
             title="세계관 룰 검사 실패",
             sentence="(원고 전체)",
-            reason="json_anchor: <none>\nconflict: LLM 호출/파싱 실패",
-            rewrite=repr(e),
+            reason=f"LLM 호출/파싱 실패: {repr(e)}",
             severity="high",
         )]
 
@@ -219,8 +186,7 @@ conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
             continue
 
         reason = str(it.get("reason") or "").strip()
-        rewrite = str(it.get("rewrite") or "").strip()
-        if not reason or not rewrite:
+        if not reason:
             continue
 
         sev = str(it.get("severity") or "medium").lower()
@@ -229,10 +195,9 @@ conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
 
         out.append(Issue(
             type="world",
-            title=str(it.get("title") or "세계관 앵커 충돌"),
+            title=str(it.get("title") or "세계관 충돌"),
             sentence=sentence,
             reason=reason,
-            rewrite=rewrite,
             severity=sev,
         ))
 
