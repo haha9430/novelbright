@@ -2,45 +2,156 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional as Opt
 
 from dotenv import load_dotenv
-from langchain_upstage import ChatUpstage
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_upstage import ChatUpstage
 
 from .check_consistency import Issue
 
 load_dotenv()
 
-_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+_CODEBLOCK_JSON_RE = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
+_ISSUES_JSON_RE = re.compile(r'(\{[^{}]*"issues"\s*:\s*\[.*?\][^{}]*\})', re.DOTALL)
+_ANY_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def _safe_json_load(s: str) -> Opt[Dict[str, Any]]:
+    try:
+        obj = json.loads(s)
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+
+def _extract_json(text: str) -> Opt[Dict[str, Any]]:
+    if not isinstance(text, str):
+        return None
+    t = text.strip()
+
+    m = _CODEBLOCK_JSON_RE.search(t)
+    if m:
+        obj = _safe_json_load(m.group(1))
+        if obj is not None:
+            return obj
+
+    m = _ISSUES_JSON_RE.search(t)
+    if m:
+        obj = _safe_json_load(m.group(1))
+        if obj is not None:
+            return obj
+
+    m = _ANY_JSON_RE.search(t)
+    if m:
+        obj = _safe_json_load(m.group(0))
+        if obj is not None:
+            return obj
+
+    return None
 
 
 def _get_full_text(episode_facts: Dict[str, Any]) -> str:
     raw = episode_facts.get("raw_text")
-    if isinstance(raw, str) and raw.strip():
-        return raw
-    return ""
+    return raw if isinstance(raw, str) and raw.strip() else ""
+
+
+def _is_leaf(v: Any) -> bool:
+    return isinstance(v, (str, int, float, bool)) or v is None
+
+
+def _stringify(v: Any) -> str:
+    if v is None:
+        return "null"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return str(v).strip()
+
+
+def _make_anchor_sentence(path: str, value: Any) -> str:
+    return f"{path} = {_stringify(value)}"
+
+
+def _build_anchors_from_json(obj: Any, prefix: str) -> List[str]:
+    anchors: List[str] = []
+
+    def walk(x: Any, p: str):
+        if _is_leaf(x):
+            anchors.append(_make_anchor_sentence(p, x))
+            return
+
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if not isinstance(k, str):
+                    continue
+                nk = k.strip()
+                if not nk:
+                    continue
+                walk(v, f"{p}.{nk}" if p else nk)
+            return
+
+        if isinstance(x, list):
+            for idx, v in enumerate(x[:60]):
+                if _is_leaf(v):
+                    walk(v, f"{p}[{idx}]")
+                elif isinstance(v, dict):
+                    for kk in list(v.keys())[:12]:
+                        vv = v.get(kk)
+                        if _is_leaf(vv):
+                            walk(vv, f"{p}[{idx}].{kk}")
+            return
+
+    walk(obj, prefix)
+    return anchors
 
 
 def _normalize_character_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(cfg, dict):
         return {"characters": []}
     chars = cfg.get("characters")
-    if isinstance(chars, list):
-        return {"characters": chars}
-    return {"characters": []}
+    return {"characters": chars if isinstance(chars, list) else []}
 
 
-def _extract_json(text: str) -> Optional[Dict[str, Any]]:
-    if not isinstance(text, str):
-        return None
-    m = _JSON_RE.search(text.strip())
-    if not m:
-        return None
-    try:
-        return json.loads(m.group(0))
-    except Exception:
-        return None
+def _pick_character_anchor_pool(character_config: Dict[str, Any]) -> List[str]:
+    chars = character_config.get("characters", [])
+    if not isinstance(chars, list):
+        return []
+
+    anchors: List[str] = []
+    for i, ch in enumerate(chars[:12]):
+        if not isinstance(ch, dict):
+            continue
+
+        name = ch.get("name")
+        name_tag = str(name).strip() if isinstance(name, str) and name.strip() else f"idx{i}"
+
+        # 성격/감정 태클 방지: 하드팩트 위주
+        hard_keys = [
+            "name", "gender", "age", "birth", "death", "is_alive",
+            "injury", "missing_parts", "scar", "disability",
+            "family", "parents", "siblings", "lover", "spouse",
+            "rank", "status", "identity",
+        ]
+
+        picked = {}
+        for k in hard_keys:
+            if k in ch and _is_leaf(ch.get(k)):
+                picked[k] = ch.get(k)
+
+        if not picked:
+            leaf_count = 0
+            for k, v in ch.items():
+                if leaf_count >= 10:
+                    break
+                if _is_leaf(v):
+                    picked[k] = v
+                    leaf_count += 1
+
+        anchors += _build_anchors_from_json(picked, f"character[{name_tag}]")
+
+    if len(anchors) > 160:
+        anchors = anchors[:160]
+    return anchors
 
 
 def check_character_consistency(
@@ -49,68 +160,47 @@ def check_character_consistency(
     story_state: Dict[str, Any],
 ) -> List[Issue]:
     _ = story_state
-
     full_text = _get_full_text(episode_facts)
-    if not full_text.strip():
+    if not full_text:
         return []
 
-    characters = _normalize_character_config(character_config)
+    cfg = _normalize_character_config(character_config)
+    anchors = _pick_character_anchor_pool(cfg)
+    if not anchors:
+        return []
 
     llm = ChatUpstage(model="solar-pro")
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """
 너는 ‘원고-캐릭터(JSON) 비교기’다.
+외부 상식/현실/심리 추론을 절대 하지 않는다.
 
-✅ 핵심 원칙
-- JSON에 없는 디테일은 “모름/열림”이다. 없다고 오류로 잡지 마라.
-- 캐릭터는 모든 순간 한 성격만 가지지 않는다.
-  성격/감정 표현을 “JSON에 없어서” 오류로 잡지 마라.
+[판정]
+- anchors를 "정면으로 뒤집는 경우"만 이슈 생성.
+- JSON에 없는 정보는 오류 아님.
+- 성격/기분/직업 디테일/병명 언급으로 태클 금지.
+- 작가 의도/연출/서술순서/정보 은닉은 오류 아님.
 
-✅ 이슈로 잡아도 되는 “하드 앵커” 예시
-- 이름/호칭/성별/나이(명시된 경우)/국적(명시된 경우)
-- 신체 상태(왼팔 부상 등), 장애/흉터(명시된 경우)
-- 사망/생존/실종 같은 상태(명시된 경우)
-- 관계(가족/연인/원수 등) 가 명시됐는데 원고가 반대로 씀
-- 특정 행동 금지/필수 같은 “명시적 제약” 위반
+[2차 검증]
+- 없어서 오류면 버려라
+- 단순 톤/감정 차이면 버려라
+- 인물의 일시적 반응(화남/긴장 등)으로 태클이면 버려라
 
-🚫 절대 잡지 말 것
-- “JSON에 전문의/펠로우가 없으니 오류” (금지)
-- 병명/전문분야 언급을 직업 불일치로 몰기 (금지)
-- 성격 pros/cons가 none인데 감정표현했다고 오류 (금지)
-- 그냥 디테일/설명/비유를 오류로 만들기 (금지)
-- 외부 상식/현실 근거로 판단 (금지)
+[reason(2줄 고정)]
+json_anchor: "<충돌한 앵커 1줄 그대로>"
+conflict: "<원고가 어떻게 정면으로 뒤집는지 1문장>"
 
-========================
-🧷 issue 생성 조건 (필수)
-========================
-issue는 아래 3개가 모두 있어야 한다.
-1) key_path: characters JSON의 경로
-2) json_anchor: JSON에 적힌 하드 앵커 문장 그대로
-3) manuscript_sentence: 원고 발췌 문장 그대로
+[rewrite]
+- 충돌만 제거하는 최소 수정 1문장
 
-conflict는 “앵커가 어떻게 뒤집혔는지”만 말한다.
-“JSON에 없어서”라는 이유는 금지.
-
-========================
-📤 출력 (JSON만)
-========================
-{{
-  "issues": [
-    {{
-      "title": "짧은 제목",
-      "sentence": "원고 발췌(필수)",
-      "reason": "key_path: ...\\njson_anchor: ...\\nconflict: ...",
-      "rewrite": "앵커 위반만 제거한 최소 수정 문장(필수)",
-      "severity": "low|medium|high"
-    }}
-  ]
-}}
-
-issues 없으면 {{ "issues": [] }} 만 출력.
+[출력(JSON only)]
+{{ "issues": [ {{ "title","sentence","reason","rewrite","severity" }} ] }}
+없으면:
+{{ "issues": [] }}
 """),
-        ("human", """[characters_json]
-{characters}
+        ("human", """[anchors]
+{anchors}
 
 [manuscript]
 {full_text}
@@ -119,7 +209,7 @@ issues 없으면 {{ "issues": [] }} 만 출력.
 
     try:
         raw = (prompt | llm).invoke({
-            "characters": json.dumps(characters, ensure_ascii=False),
+            "anchors": json.dumps(anchors, ensure_ascii=False),
             "full_text": full_text,
         })
         content = raw.content if hasattr(raw, "content") else str(raw)
@@ -128,44 +218,42 @@ issues 없으면 {{ "issues": [] }} 만 출력.
         return [Issue(
             type="character",
             title="캐릭터 룰 검사 실패",
-            sentence=None,
-            reason="LLM 호출/파싱 실패",
-            rewrite=f"{repr(e)}",
+            sentence="(원고 전체)",
+            reason="json_anchor: <none>\nconflict: LLM 호출/파싱 실패",
+            rewrite=repr(e),
             severity="high",
         )]
 
+    out: List[Issue] = []
     items = data.get("issues", [])
     if not isinstance(items, list):
-        return []
+        items = []
 
-    out: List[Issue] = []
     for it in items:
         if not isinstance(it, dict):
             continue
 
-        title = str(it.get("title") or "캐릭터 앵커 충돌").strip()
-
         sentence = it.get("sentence")
-        sentence = sentence if isinstance(sentence, str) else ""
-        sentence = sentence.strip() or None
+        sentence = sentence.strip() if isinstance(sentence, str) and sentence.strip() else None
+        if not sentence:
+            continue
 
         reason = str(it.get("reason") or "").strip()
         rewrite = str(it.get("rewrite") or "").strip()
-
-        severity = str(it.get("severity") or "medium").strip().lower()
-        if severity not in ("low", "medium", "high"):
-            severity = "medium"
-
-        if not sentence or not reason or not rewrite:
+        if not reason or not rewrite:
             continue
+
+        sev = str(it.get("severity") or "medium").lower()
+        if sev not in ("low", "medium", "high"):
+            sev = "medium"
 
         out.append(Issue(
             type="character",
-            title=title,
+            title=str(it.get("title") or "캐릭터 앵커 충돌"),
             sentence=sentence,
             reason=reason,
             rewrite=rewrite,
-            severity=severity,
+            severity=sev,
         ))
 
     return out

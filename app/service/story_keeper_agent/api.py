@@ -5,7 +5,7 @@ import inspect
 
 sys.path.insert(0, os.getcwd())
 
-from fastapi import APIRouter, HTTPException, Body, Form
+from fastapi import APIRouter, HTTPException, Body, Form, Query
 from pydantic import ValidationError
 
 from app.service.story_keeper_agent.ingest_episode import (
@@ -15,8 +15,14 @@ from app.service.story_keeper_agent.ingest_episode import (
 from app.service.story_keeper_agent.ingest_episode.chunking import split_into_chunks
 from app.service.story_keeper_agent.load_state.extracter import PlotManager
 
+# ✅ 최종 결과(필터 포함)용
 from app.service.story_keeper_agent.rules.check_consistency import check_consistency
 from app.service.story_keeper_agent.finalize_episode import issues_to_edits
+
+# ✅ 룰별 raw 디버깅용(직접 호출)
+from app.service.story_keeper_agent.rules.world_rules import check_world_consistency
+from app.service.story_keeper_agent.rules.character_rules import check_character_consistency
+from app.service.story_keeper_agent.rules.plot_rules import check_plot_consistency
 
 from app.service.characters import upsert_character
 
@@ -94,15 +100,10 @@ def _load_character_config() -> dict:
 
 
 def _call_upsert_character(name: str, text: str):
-    """
-    upsert_character() 시그니처가 프로젝트마다 달라서
-    여기서 자동으로 맞춰서 호출한다.
-    """
     try:
         sig = inspect.signature(upsert_character)
         params = sig.parameters
 
-        # 키워드 인자 후보들 (프로젝트마다 이름 달라서 대비)
         text_keys = [
             "text",
             "content",
@@ -119,15 +120,9 @@ def _call_upsert_character(name: str, text: str):
         ]
 
         kwargs = {}
-
-        # name 키가 따로 있으면 맞춰줌 (대부분 name이라서 기본은 name)
         if "name" in params:
             kwargs["name"] = name
-        else:
-            # name이 없으면 1번째 positional로 밀어넣는 쪽으로 간다
-            pass
 
-        # text 계열 파라미터 찾기
         chosen_text_key = None
         for k in text_keys:
             if k in params:
@@ -136,21 +131,16 @@ def _call_upsert_character(name: str, text: str):
 
         if chosen_text_key:
             kwargs[chosen_text_key] = text
-            # name 키워드가 없을 때는 positional+keyword 섞이면 위험하니 안전하게 처리
             if "name" in params:
                 return upsert_character(**kwargs)
-            else:
-                return upsert_character(name, **{chosen_text_key: text})
+            return upsert_character(name, **{chosen_text_key: text})
 
-        # **kwargs 받는 함수면 그냥 text로 넣어보기
         if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
             return upsert_character(name=name, text=text)
 
-        # 마지막 수단: (name, text) positional로 호출
         return upsert_character(name, text)
 
     except TypeError:
-        # 혹시 위에서 또 안 맞으면 최종 fallback
         return upsert_character(name, text)
     except Exception:
         raise
@@ -194,6 +184,7 @@ def character_setting(name: str = Form(...), text: str = Form(...)):
 def manuscript_feedback(
     episode_no: int,
     text: str = Body(..., media_type="text/plain"),
+    debug_raw: bool = Query(False, description="룰별 raw 이슈를 debug에 포함할지"),
 ):
     try:
         full_text_str = text or ""
@@ -210,24 +201,29 @@ def manuscript_feedback(
         # ✅ characters.json 로드
         character_config = _load_character_config()
 
-        # 기존 PlotManager/기존 코드 호환용 (world/history 둘 다)
         story_state = {"world": world, "history": history}
 
-        # 청크 split
+        # 청크 split + ingest
         chunks = split_into_chunks(full_text_str)
-
-        # ingest
         ingest_episode(req=IngestEpisodeRequest(episode_no=episode_no, text_chunks=chunks))
 
-        # extract_facts (원고 원문도 함께 전달)
+        # extract_facts + raw_text 삽입
         episode_facts = manager.extract_facts(episode_no, full_text_str, story_state)
-
         if isinstance(episode_facts, dict):
             episode_facts["raw_text"] = full_text_str
         else:
             episode_facts = {"raw_text": full_text_str}
 
-        # ✅ JSON 비교 기반 룰만
+        # =========================
+        # ✅ 1) 룰별 raw 실행 (원인 파악용)
+        # =========================
+        raw_world = check_world_consistency(episode_facts, plot_config)
+        raw_char = check_character_consistency(episode_facts, character_config, story_state)
+        raw_plot = check_plot_consistency(episode_facts, plot_config, story_state)
+
+        # =========================
+        # ✅ 2) 최종 필터(check_consistency) 실행
+        # =========================
         issues = check_consistency(
             episode_facts=episode_facts,
             character_config=character_config,
@@ -235,7 +231,6 @@ def manuscript_feedback(
             story_state=story_state,
         )
 
-        # issues -> edits 변환
         edits = issues_to_edits(
             issues,
             episode_no=episode_no,
@@ -245,27 +240,47 @@ def manuscript_feedback(
         issues_count = len(issues) if isinstance(issues, list) else 0
         edits_count = len(edits) if isinstance(edits, list) else 0
 
+        debug_block = {
+            "issues_count": issues_count,
+            "edits_count": edits_count,
+            "full_text_len": len(full_text_str),
+            "plot_loaded": bool(plot_config),
+            "world_loaded": bool(world),
+            "history_loaded": bool(history),
+            "character_count": len(character_config.get("characters", [])) if isinstance(character_config, dict) else 0,
+
+            # ✅ 여기부터가 핵심: "룰이 실제로 뭘 뽑았는지" 바로 보임
+            "raw_counts": {
+                "world": len(raw_world) if isinstance(raw_world, list) else -1,
+                "character": len(raw_char) if isinstance(raw_char, list) else -1,
+                "plot": len(raw_plot) if isinstance(raw_plot, list) else -1,
+            },
+            "raw_fail_flags": {
+                # 룰 함수가 실패하면 title에 '검사 실패'가 들어가게 해둔 전제(없으면 False)
+                "world_failed": any(getattr(x, "title", "").endswith("실패") for x in raw_world) if isinstance(raw_world, list) else True,
+                "character_failed": any(getattr(x, "title", "").endswith("실패") for x in raw_char) if isinstance(raw_char, list) else True,
+                "plot_failed": any(getattr(x, "title", "").endswith("실패") for x in raw_plot) if isinstance(raw_plot, list) else True,
+            },
+        }
+
+        if debug_raw:
+            # 너무 길어질 수 있으니, 최대 5개씩만 샘플로
+            debug_block["raw_samples"] = {
+                "world": [x.to_dict() for x in raw_world[:5]] if isinstance(raw_world, list) else [],
+                "character": [x.to_dict() for x in raw_char[:5]] if isinstance(raw_char, list) else [],
+                "plot": [x.to_dict() for x in raw_plot[:5]] if isinstance(raw_plot, list) else [],
+            }
+
         return {
             "episode_no": episode_no,
             "issues": issues,
             "edits": edits,
-            "debug": {
-                "issues_count": issues_count,
-                "edits_count": edits_count,
-                "full_text_len": len(full_text_str or ""),
-                "plot_loaded": bool(plot_config),
-                "world_loaded": bool(world),
-                "history_loaded": bool(history),
-                "character_count": len(character_config.get("characters", []))
-                if isinstance(character_config, dict)
-                else 0,
-            },
+            "debug": debug_block,
         }
 
     except ValidationError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         import traceback
-
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
