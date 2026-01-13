@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 # [추가] Solar 임베딩을 사용하기 위한 라이브러리 임포트
 from langchain_upstage import UpstageEmbeddings
 
-CHROMA_DB_PATH = os.path.join(os.getcwd(), "app/common/data/chroma_db")
+CHROMA_DB_PATH = os.path.join(os.getcwd(), "app/data/chroma_db")
 COLLECTION_NAME = "history_collection"
 
 # [수정] 전역 클라이언트 (재연결 방지)

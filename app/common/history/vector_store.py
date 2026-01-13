@@ -11,7 +11,7 @@ from langchain_upstage import UpstageEmbeddings
 from langchain_core.documents import Document
 
 # 벡터 DB가 저장될 로컬 폴더 경로
-PERSIST_DIRECTORY = "app/common/data/chroma_db"
+PERSIST_DIRECTORY = "app/data/chroma_db"
 
 class HistoryVectorStore:
     def __init__(self):

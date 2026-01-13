@@ -1,6 +1,8 @@
 import json
 import time
+import re
 from typing import List, Dict, Any, Set
+import difflib
 
 # LangChain & AI 관련
 from langchain_upstage import ChatUpstage
@@ -9,7 +11,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.utilities import GoogleSerperAPIWrapper
 
 # 로컬 DB 레포지토리
-from app.service.manuscript.repo import ManuscriptRepository
+from app.service.clio_fact_checker_agent.repo import ManuscriptRepository
 
 class ManuscriptAnalyzer:
     def __init__(self, setting_path: str):
@@ -59,10 +61,6 @@ class ManuscriptAnalyzer:
             if isinstance(f, str):
                 keywords.add(f.split("(")[0].strip())
 
-        # (임시) 테스트용 허구 키워드 추가
-        keywords.add("에이단")
-        keywords.add("에이단 신부")
-
         return keywords
 
     def analyze_manuscript(self, text: str) -> Dict[str, Any]:
@@ -74,17 +72,42 @@ class ManuscriptAnalyzer:
         4. 로컬 DB 조회 -> 웹 검색 -> 결과 검증
         """
         print(f"📄 원고 분석 시작 (총 {len(text)}자)")
+
+        # LLM에게는 여전히 청크 단위로 줍니다 (토큰 제한 때문)
         chunks = self.text_splitter.split_text(text)
 
-        # 1. 청크별로 검색 쿼리 후보 추출
-        all_query_items = {} # 중복 제거를 위해 Dict 사용 {keyword: query_info}
+        all_query_items = {}
 
         for i, chunk in enumerate(chunks):
             items = self._extract_search_queries(chunk)
+
             for item in items:
                 kw = item['keyword']
+                origin_snippet = item.get('original_sentence', '')
+
+                # [NEW] 전체 텍스트(text)에서, 현재 커서(current_global_cursor) 이후부터 찾기
+                start_idx, end_idx = self._find_exact_position(
+                    full_text=text,
+                    target_snippet=origin_snippet,
+                    start_from=0
+                )
+
+                if start_idx != -1:
+                    actual_found_text = text[start_idx:end_idx]
+
+                    print(f"   📍 위치 발견: {start_idx} ~ {end_idx} (Keyword: {kw})")
+                    print(f"      👉 [검증] 실제 추출된 문장: \"{actual_found_text}\"")
+                    item['start_index'] = start_idx
+                    item['end_index'] = end_idx
+                else:
+                    print(f"   ⚠️ 위치 찾기 실패: '{kw}'")
+                    item['start_index'] = -1
+                    item['end_index'] = -1
+
                 # 이미 있는 키워드면 덮어쓰거나 무시 (여기선 최신 쿼리로 갱신)
                 all_query_items[kw] = item
+
+
 
         print(f"   -> 총 {len(all_query_items)}개의 검색 후보 추출됨")
 
@@ -95,6 +118,7 @@ class ManuscriptAnalyzer:
         for keyword, item_data in all_query_items.items():
             query_string = item_data['search_query']
             reason = item_data.get('reason', '')
+            origin_sent = item_data.get('original_sentence', '')
 
             # [Filter 1] 소설 설정(허구)에 포함되는지 확인
             # 단순 일치뿐만 아니라 부분 일치도 체크 (예: '에이단' in '에이단 신부님')
@@ -118,23 +142,44 @@ class ManuscriptAnalyzer:
                 historical_context.append(local_result)
                 continue # 로컬에 있으면 웹 검색 스킵
 
+            # [Process] 정보 검색 시작
             # Step B: 웹 검색 (Serper)
             web_data = self._search_web(query_string)
+
             if web_data:
-                # Step C: [NEW] 검색 결과 적합성 검증 (LLM)
-                # 검색된 내용이 실제 소설의 시대적 배경/맥락과 맞는지 확인
-                verification = self._verify_content_relevance(keyword, query_string, web_data['content'])
+                # Step C: [검증 & 팩트체크]
+                # ★ 수정 포인트: 맥락(item_data['reason'])을 같이 넘겨줍니다.
+                verification = self._verify_content_relevance(
+                    keyword,
+                    query_string,
+                    web_data['content'],
+                    context=origin_sent
+                )
 
+                # 1. 자료 자체가 쓸모없는 경우 (예: 동명이인 연예인) -> 버림
                 if verification['is_relevant']:
-                    web_data['verification_note'] = verification['reason']
-                    historical_context.append(web_data)
-                    print(f"   🌐 웹 검색 성공 & 검증 통과")
-                else:
-                    print(f"   🗑️ 검증 탈락: {verification['reason']}")
-            else:
-                print(f"   ❌ 정보 없음")
+                    web_data['is_relevant'] = True
 
-            time.sleep(0.5) # API 속도 조절
+                    # 2. 자료는 맞는데, 소설 내용과 일치하는가? (팩트체크 결과 저장)
+                    # ★ 수정 포인트: True/False 여부를 필터링하지 않고 결과에 '저장'만 합니다.
+                    web_data['is_positive'] = verification['is_positive']
+                    web_data['reason'] = verification['reason']
+                    web_data['original_sentence'] = origin_sent
+                    web_data['start_index'] = item_data.get('start_index')
+                    web_data['end_index'] = item_data.get('end_index')
+
+                    historical_context.append(web_data)
+
+                    # 로그 출력 (오류 발견 시 눈에 띄게)
+                    if verification['is_positive']:
+                        print(f"   ✅ 검증 통과: {verification['reason']}")
+                    else:
+                        print(f"   ⚠️ 고증 오류 의심: {verification['reason']}")
+
+                else:
+                    print(f"   🗑️ 관련 없는 자료(검증 탈락): {verification['reason']}")
+
+            time.sleep(0.2)# API 속도 조절
 
         return {
             "found_entities_count": len(all_query_items),
@@ -155,14 +200,21 @@ class ManuscriptAnalyzer:
         2. **제외(Strict):** - '의과 대학', '병원', '신부님', '마차' 같은 **수식어 없는 일반 명사 절대 제외**.
            - '19세기', '오늘', '내일', '런던의 거리' 같은 **단순 시공간 묘사 제외**.
            - 주인공의 사적인 행동, 감정 묘사, 대화의 일상적인 소재 제외.
-        3. **쿼리 최적화 지침:** - 단순히 본문의 단어를 그대로 쓰지 말고, **검색 엔진이 이해하기 쉬운 형태**로 조합하세요.
+        3. **원문 유지(Critical):** - `original_sentence`를 추출할 때, **절대로 문장을 요약하거나 수정하지 마세요.**
+           - 조사, 문장 부호, 띄어쓰기까지 **본문 그대로 복사**해야 시스템이 위치를 찾을 수 있습니다.
+        4. **쿼리 최적화 지침:** - 단순히 본문의 단어를 그대로 쓰지 말고, **검색 엔진이 이해하기 쉬운 형태**로 조합하세요.
            - 인물 이름이 불완전하게 나오면(예: 성만 나오거나 이름만 나올 때), 문맥을 파악해 **전체 이름이나 직업**을 덧붙이세요.
            - 지명이나 고유명사가 모호할 경우, **'역사', '유래', '19세기' 등의 키워드**를 쿼리에 포함시켜 범위를 좁히세요.
 
         [출력 형식]
-        반드시 아래와 같은 **JSON 리스트**만 출력하세요. (마크다운 없이)
+        반드시 아래와 같은 **JSON 리스트**만 출력하세요.
         [
-            {"keyword": "본문에 나온 원본 단어", "search_query": "최적화된 구글 검색용 쿼리", "reason": "검색이 필요한 이유 요약"}
+            {
+                "keyword": "본문에 나온 핵심 단어",
+                "original_sentence": "본문에서 토씨 하나 안 바꾸고 그대로 복사한 문장 전체",
+                "search_query": "구글 검색용 쿼리",
+                "reason": "검색이 필요한 이유"
+            }
         ]
         """
 
@@ -192,8 +244,8 @@ class ManuscriptAnalyzer:
             dist = search_result['distances'][0][0]
             content = search_result['documents'][0][0]
 
-            # 거리 임계값 (1.2보다 가까워야 관련성 있음)
-            if dist < 1.2:
+            # 거리 임계값 (1.0보다 가까워야 관련성 있음)
+            if dist < 1.0:
                 return {
                     "keyword": keyword,
                     "content": content,
@@ -226,36 +278,41 @@ class ManuscriptAnalyzer:
         except Exception:
             return None
 
-    def _verify_content_relevance(self, keyword: str, query: str, content: str) -> Dict[str, Any]:
+    def _verify_content_relevance(self, keyword: str, query: str, content: str, context: str) -> Dict[str, Any]:
         """
-        [NEW] 검색 결과 검증기
-        찾아온 정보가 내가 의도한 맥락(역사적 사실)과 맞는지 LLM이 판별합니다.
-        예: '업턴' 검색 결과가 '케이트 업턴(모델)'이면 False 반환.
+        [NEW] 검색 결과 검증 + 팩트체크
+        context: 검색을 하게 된 원문 맥락 (예: '조선시대에 감자가 있었는지 확인')
         """
         prompt = f"""
-        당신은 역사 자료 검증관입니다.
-        사용자가 '{keyword}'(쿼리: {query})를 검색했고, 아래 결과를 얻었습니다.
-        이 결과가 **역사적 사실, 지리, 인물 정보**로서 유의미한지 판단하세요.
+        당신은 역사 소설의 고증을 담당하는 팩트체커입니다.
+
+        [상황]
+        작가가 소설을 쓰다가 **"{context}"** 라는 의문을 품고
+        '{keyword}'(쿼리: {query})를 검색하여 아래 결과를 얻었습니다.
 
         [검색 결과]
-        {content[:1000]}
+        {content[:1500]}
 
         [판단 기준]
-        1. **부적합:** 현대의 연예인(모델, 배우), 쇼핑몰, 단순 사전적 정의, 게임/영화 정보.
-        2. **적합:** 역사적 인물, 실제 존재하는 지명, 역사적 사건, 기관의 연혁.
+        1. **is_relevant (자료 적합성)**: 검색 결과가 '역사/지리/인물' 정보가 맞으면 true. (현대 연예인, 광고면 false)
+        2. **is_positive (사실 일치 여부)**: 
+           - 검색 결과에 비추어 볼 때, 작가의 의도나 묘사가 역사적 사실과 **일치하거나 가능성이 있으면 true**.
+           - 명백한 시대착오(예: 조선시대 커피)거나 **오류라면 false**.
+           - 판단이 불가능하면 true(보류)로 처리.
 
         결과를 JSON으로 반환하세요:
         {{
             "is_relevant": true/false,
-            "reason": "판단 이유 한 문장"
+            "is_positive": true/false,
+            "reason": "판단의 근거 한 문장 (특히 false일 경우 구체적으로)"
         }}
         """
         try:
             response = self.llm.invoke([SystemMessage(content=prompt)])
             return self._clean_json_string(response.content)
-        except:
+        except Exception as e:
             # 에러 나면 일단 통과 (False Negative 방지)
-            return {"is_relevant": True, "reason": "검증 실패(Pass)"}
+            return {"is_relevant": True, "reason": f"{str(e)}"}
 
     def _parse_json_garbage(self, text: str) -> List[Dict]:
         """LLM이 주는 지저분한 JSON 문자열에서 리스트만 추출"""
@@ -305,3 +362,105 @@ class ManuscriptAnalyzer:
         except Exception:
             # 파싱 실패 시 빈 딕셔너리 반환
             return {}
+
+    def _find_exact_position(self, full_text, target_snippet, start_from=0):
+        """
+        [Global Search 통합 버전]
+        1단계: 단순 일치 (Exact Match)
+        2단계: 정규화 일치 (Regex Normalization) - 공백/특수문자 무시
+        3단계: 유사도 일치 (Fuzzy Match / Difflib) - 오타/변형 대응
+        """
+        if not target_snippet:
+            return -1, -1
+
+        # 검색 범위를 start_from 이후로 제한
+        search_scope_text = full_text[start_from:]
+
+        # ---------------------------------------------------------
+        # 1단계: 단순 검색 (Exact Match)
+        # ---------------------------------------------------------
+        clean_target = target_snippet.strip(" '\"\n")
+        if not clean_target:
+            return -1, -1
+
+        local_idx = search_scope_text.find(clean_target)
+        if local_idx != -1:
+            real_start = start_from + local_idx
+            real_end = real_start + len(clean_target)
+            return real_start, real_end
+
+        # ---------------------------------------------------------
+        # 2단계: 정규식 기반 유연한 검색 (Normalization)
+        # ---------------------------------------------------------
+        # 공백, 특수문자를 모두 제거하고 글자(Alphanumeric)만 비교
+        def normalize(s):
+            return re.sub(r'[\s\W_]+', '', s)
+
+        norm_scope = normalize(search_scope_text)
+        norm_target = normalize(clean_target)
+
+        if not norm_target:
+            return -1, -1
+
+        norm_idx = norm_scope.find(norm_target)
+
+        if norm_idx != -1:
+            # 정제된 인덱스(norm_idx)를 원본 인덱스로 역매핑
+            current_norm_pos = 0
+            real_local_start = -1
+            real_local_end = -1
+
+            for i, char in enumerate(search_scope_text):
+                # 원본 문자 중 특수문자/공백은 카운트하지 않고 건너뜀
+                if re.match(r'[\s\W_]', char):
+                    continue
+
+                # 시작 위치 포착
+                if current_norm_pos == norm_idx:
+                    real_local_start = i
+
+                # 끝 위치 포착 (길이만큼 진행했을 때)
+                if current_norm_pos == norm_idx + len(norm_target) - 1:
+                    real_local_end = i + 1
+                    break
+
+                current_norm_pos += 1
+
+            if real_local_start != -1 and real_local_end != -1:
+                return (start_from + real_local_start), (start_from + real_local_end)
+
+        # ---------------------------------------------------------
+        # 3단계: 유사도 기반 검색 (Fuzzy Match - Difflib)
+        # ---------------------------------------------------------
+        # 여기까지 왔다면 정밀 검색에 실패한 것임.
+        # 최후의 수단으로 '가장 비슷한 문장'을 찾아 매칭 시도.
+
+        # 문장 단위로 쪼개서 비교 (속도 최적화)
+        # 마침표(.), 물음표(?), 느낌표(!), 줄바꿈(\n) 등을 기준으로 나눔
+        candidates = re.split(r'[.?!:\n]+', search_scope_text)
+
+        best_ratio = 0
+        best_candidate = ""
+
+        for cand in candidates:
+            # 너무 짧은 문장(5글자 미만)은 노이즈일 가능성이 높음
+            if len(cand) < 5:
+                continue
+
+            # 유사도 계산
+            ratio = difflib.SequenceMatcher(None, cand, clean_target).ratio()
+
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_candidate = cand
+
+        # 유사도가 60% (0.6) 이상일 때만 찾은 것으로 간주
+        if best_ratio >= 0.6:
+            # 찾은 문장(best_candidate)이 원문의 어디에 있는지 찾기
+            # (split되면서 특수문자가 사라졌을 수 있으므로 find로 다시 위치 추적)
+            fuzzy_idx = search_scope_text.find(best_candidate)
+            if fuzzy_idx != -1:
+                return (start_from + fuzzy_idx), (start_from + fuzzy_idx + len(best_candidate))
+
+        # 모든 방법 실패
+        return -1, -1
