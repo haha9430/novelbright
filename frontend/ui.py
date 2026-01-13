@@ -1,9 +1,12 @@
 import streamlit as st
 import time
 import uuid
+from streamlit_quill import st_quill
+import requests
+import re
 
 # =========================================================
-# 1. 설정 및 CSS
+# 1. 설정 및 CSS (사용자님 디자인 적용)
 # =========================================================
 st.set_page_config(
     page_title="Moneta Studio",
@@ -18,24 +21,16 @@ st.markdown("""
     .stApp { background-color: #FDFBF7; }
 
     /* 2. 에디터 스타일 (종이 질감) */
-    .stTextArea textarea[aria-label="본문"] {
+    .stQuill {
         background-color: #FFFFFF !important;
         border: 1px solid #EAE4DC !important;
-        padding: 60px 80px !important;
-        font-family: 'KoPub Batang', serif !important;
-        line-height: 2.1 !important;
-        font-size: 17px !important;
-        color: #333333 !important;
+        border-radius: 4px !important;
+        padding: 20px !important;
         box-shadow: 0 2px 8px rgba(0,0,0,0.02) !important;
-        height: 800px !important;
     }
 
-    /* 3. 모달 입력창 초기화 */
-    div[data-testid="stModal"] textarea {
-        padding: 10px 15px !important;
-        font-family: sans-serif !important;
-        font-size: 14px !important;
-    }
+    /* 3. 모달 및 인풋 */
+    div[data-testid="stModal"] textarea { padding: 10px 15px !important; font-family: sans-serif; font-size: 14px; }
 
     /* 4. 버튼 스타일 */
     div[data-testid="stButton"] button {
@@ -45,24 +40,18 @@ st.markdown("""
         color: #5D4037 !important;
         transition: all 0.2s;
     }
-    div[data-testid="stButton"] button:hover {
-        background-color: #FAF5F0 !important;
-        border-color: #BCAAA4 !important;
-    }
+    div[data-testid="stButton"] button:hover { background-color: #FAF5F0 !important; border-color: #BCAAA4 !important; }
 
-    /* Primary */
+    /* Primary Button */
     div[data-testid="stButton"] button[kind="primary"] {
         background-color: #8D6E63 !important;
         color: white !important;
         border: none !important;
     }
-    div[data-testid="stButton"] button[kind="primary"]:hover {
-        background-color: #6D4C41 !important;
-    }
+    div[data-testid="stButton"] button[kind="primary"]:hover { background-color: #6D4C41 !important; }
 
-    /* 5. 사이드바 스타일 */
+    /* 5. 사이드바 */
     section[data-testid="stSidebar"] { background-color: #F9F8F6 !important; }
-
     section[data-testid="stSidebar"] div[data-testid="stButton"] button {
         background-color: transparent !important;
         border: none !important;
@@ -76,50 +65,50 @@ st.markdown("""
         color: #000000 !important;
         font-weight: 500 !important;
     }
-    section[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="primary"] {
-        background-color: #E0E0E0 !important;
-        color: #000000 !important;
-        font-weight: bold !important;
-        border-radius: 6px !important;
-    }
 
-    /* 6. 인라인 에디트 스타일 */
+    /* 6. 타이틀 인풋 */
     .doc-title-input input {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        font-family: 'KoPub Batang', serif;
         font-size: 34px !important;
         font-weight: 700 !important;
-        color: #333333 !important;
+        color: #333 !important;
         background-color: transparent !important;
         border: none !important;
         padding: 0px !important;
-        margin-bottom: 10px !important;
     }
     .doc-title-input input:focus { box-shadow: none !important; }
 
-    .part-title-input input { font-weight: bold !important; font-size: 16px !important; background-color: transparent !important; border: none !important; }
-    .part-desc-input input { font-size: 13px !important; color: #888888 !important; background-color: transparent !important; border: none !important; }
-    .new-block-input input { background-color: transparent !important; border: none !important; font-size: 14px !important; }
+    /* 7. 플롯/자료실 카드 */
+    .ghost-input input { background: transparent !important; border: none !important; font-weight: bold; color: #333; }
+    .ghost-input input:focus { background: #f9f9f9 !important; border-bottom: 2px solid #FF6B6B !important; }
 
-    /* 7. 카드 및 컨테이너 */
-    .block-card-container { background-color: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 6px; padding: 10px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
-    .moneta-card { padding: 18px; border-radius: 8px; background-color: #FFFFFF; border: 1px solid #F0EAE6; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 12px; }
+    .moneta-card { padding: 15px; border-radius: 8px; background: white; border: 1px solid #eee; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
 
-    header {visibility: hidden;}
-    .block-container { padding-top: 1.5rem !important; }
+    /* 플롯 가로 스크롤 (컨테이너 격리) */
+    div[data-testid="stVerticalBlockBorderWrapper"] { border: none !important; padding: 0px !important; overflow-x: auto !important; }
+    div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"] { width: max-content !important; min-width: 100%; }
+    div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"] { width: 300px !important; min-width: 300px !important; flex: 0 0 300px !important; margin-right: 12px; }
 </style>
 """, unsafe_allow_html=True)
 
 # =========================================================
-# 2. 상태 관리
+# 2. 상태 초기화
 # =========================================================
 if "page" not in st.session_state: st.session_state.page = "home"
 if "show_moneta" not in st.session_state: st.session_state.show_moneta = False
 if "current_project_id" not in st.session_state: st.session_state.current_project_id = None
-if "messages" not in st.session_state: st.session_state.messages = []
-if "active_plot_idx" not in st.session_state: st.session_state.active_plot_idx = 0
+if "analysis_results" not in st.session_state: st.session_state.analysis_results = {}
 if "current_doc_id" not in st.session_state: st.session_state.current_doc_id = None
 
-# 프로젝트 데이터
+# 플롯 상태
+if "active_plot_idx" not in st.session_state: st.session_state.active_plot_idx = 0
+if "selected_block_id" not in st.session_state: st.session_state.selected_block_id = None
+if "is_adding_part" not in st.session_state: st.session_state.is_adding_part = False
+
+# 자료실 상태
+if "selected_material_id" not in st.session_state: st.session_state.selected_material_id = None
+
+# 더미 데이터
 if "projects" not in st.session_state:
     st.session_state.projects = [
         {
@@ -128,33 +117,20 @@ if "projects" not in st.session_state:
             "tags": ["판타지", "전쟁"],
             "desc": "눈을 떠보니 참호 속이었다...",
             "last_edited": "방금 전",
-            "characters": [
-                {"id": "c1", "name": "이성훈", "tag": "주인공, 헌터", "desc": "32세, 고인물 유저"},
-                {"id": "c2", "name": "서아라", "tag": "히로인, 힐러", "desc": "성훈의 파트너"}
-            ],
-            "documents": [
-                {"id": "doc1", "title": "프롤로그", "content": "눈을 떠보니 낯선 천장이었다...\n\n어디선가 매캐한 화약 냄새가 났다."},
-                {"id": "doc2", "title": "1화: 참호 속으로", "content": "포탄 소리가 귓가를 때렸다.\n\n콰아앙!"}
-            ],
-            "plots": [
-                {
-                    "id": str(uuid.uuid4()),
-                    "name": "메인 플롯",
-                    "desc": "전체적인 이야기 흐름",
-                    "parts": [
-                        {"id": "p1", "name": "파트 1", "desc": "기", "blocks": [{"id": "b1", "content": "주인공이 눈을 뜬다."}]},
-                        {"id": "p2", "name": "파트 2", "desc": "승", "blocks": [{"id": "b2", "content": "몬스터의 습격."}]},
-                    ]
-                }
-            ]
+            "characters": [],
+            "materials": [],
+            "documents": [{"id": "doc1", "title": "프롤로그", "content": "<p>눈을 떠보니...</p>"}],
+            "plots": [{"id": "def", "name": "메인 플롯", "desc": "기본 플롯", "parts": []}]
         }
     ]
 
 
 # =========================================================
-# 3. 헬퍼 함수 & 모달
+# 3. Helper Functions
 # =========================================================
 def get_current_project():
+    if st.session_state.current_project_id is None and st.session_state.projects:
+        st.session_state.current_project_id = st.session_state.projects[0]['id']
     return next((p for p in st.session_state.projects if p['id'] == st.session_state.current_project_id), None)
 
 
@@ -164,6 +140,12 @@ def get_current_document(proj):
         proj['documents'] = [new_doc]
         st.session_state.current_doc_id = new_doc['id']
         return new_doc
+
+    if st.session_state.current_doc_id is None:
+        doc = proj['documents'][0]
+        st.session_state.current_doc_id = doc['id']
+        return doc
+
     doc = next((d for d in proj['documents'] if d['id'] == st.session_state.current_doc_id), None)
     if not doc:
         doc = proj['documents'][0]
@@ -171,147 +153,117 @@ def get_current_document(proj):
     return doc
 
 
+# =========================================================
+# 4. Modals (Dialogs)
+# =========================================================
+@st.dialog("🔍 통합 검색", width="large")
+def search_modal(project):
+    st.markdown("### 무엇을 찾고 계신가요?")
+    query = st.text_input("검색어", placeholder="문서, 자료, 인물 검색...", label_visibility="collapsed")
+    if query:
+        st.divider()
+        found = False
+        # 문서 검색
+        for doc in project.get('documents', []):
+            clean_content = re.sub('<[^<]+?>', '', doc.get('content', ''))
+            if query in doc['title'] or query in clean_content:
+                found = True
+                with st.container(border=True):
+                    st.markdown(f"**📄 {doc['title']}**")
+                    st.caption(clean_content[:100] + "...")
+        # 자료실 검색
+        for mat in project.get('materials', []):
+            if query in mat['title'] or query in mat['content']:
+                found = True
+                icon = "🏛️" if mat['category'] == "역사" else "⚙️"
+                with st.container(border=True):
+                    st.markdown(f"**{icon} {mat['title']}** <small>({mat['category']})</small>", unsafe_allow_html=True)
+                    st.caption(mat['content'][:100] + "...")
+        if not found: st.info("검색 결과가 없습니다.")
+
+
 @st.dialog("새 작품 만들기")
 def create_project_modal():
-    st.markdown("### 새로운 세계를 창조해 보세요.")
-    title = st.text_input("제목", placeholder="예: 전지적 독자 시점")
-    desc = st.text_input("한 줄 소개", placeholder="작품의 핵심 컨셉")
-    tags = st.text_input("태그", placeholder="#판타지 #회귀")
-    st.markdown("<br>", unsafe_allow_html=True)
-    c1, c2 = st.columns([1, 1])
-    if c1.button("취소", use_container_width=True): st.rerun()
-    if c2.button("생성하기", type="primary", use_container_width=True):
-        if title:
-            default_plots = [{"id": str(uuid.uuid4()), "name": "메인 플롯", "desc": "메인 스토리", "parts": []}]
-            default_docs = [{"id": str(uuid.uuid4()), "title": "프롤로그", "content": ""}]
-            st.session_state.projects.append({
-                "id": str(uuid.uuid4()), "title": title, "desc": desc, "tags": tags.split(","),
-                "last_edited": "방금", "characters": [], "plots": default_plots, "documents": default_docs
-            })
-            st.rerun()
+    title = st.text_input("제목")
+    if st.button("생성"):
+        st.session_state.projects.append({
+            "id": str(uuid.uuid4()), "title": title, "tags": [], "desc": "", "last_edited": "방금",
+            "characters": [], "materials": [], "plots": [], "documents": []
+        })
+        st.rerun()
 
 
 @st.dialog("문서 이름 변경")
 def rename_document_modal(doc):
-    new_title = st.text_input("문서 제목", value=doc['title'])
-    if st.button("변경 저장", type="primary", use_container_width=True):
-        doc['title'] = new_title
-        st.rerun()
+    new_t = st.text_input("새 이름", value=doc['title'])
+    if st.button("변경"): doc['title'] = new_t; st.rerun()
 
 
 @st.dialog("새 인물 추가")
 def add_character_modal(project):
-    name = st.text_input("이름", placeholder="예: 홍길동")
-    tag = st.text_input("태그/역할", placeholder="예: 주인공, 빌런")
-    desc = st.text_area("설명", placeholder="성격이나 특징을 입력하세요")
-    if st.button("추가하기", type="primary", use_container_width=True):
-        if name:
-            project['characters'].append({"id": str(uuid.uuid4()), "name": name, "tag": tag, "desc": desc})
-            st.rerun()
-
-
-@st.dialog("인물 정보 수정")
-def edit_character_modal(project, char_id):
-    char = next((c for c in project['characters'] if c['id'] == char_id), None)
-    if not char: st.rerun()
-    new_name = st.text_input("이름", value=char['name'])
-    new_tag = st.text_input("태그/역할", value=char['tag'])
-    new_desc = st.text_area("설명", value=char['desc'])
-    col1, col2 = st.columns(2)
-    if col1.button("수정 완료", type="primary", use_container_width=True):
-        char['name'] = new_name
-        char['tag'] = new_tag
-        char['desc'] = new_desc
-        st.rerun()
-    if col2.button("삭제", use_container_width=True):
-        project['characters'].remove(char)
+    name = st.text_input("이름")
+    desc = st.text_area("설명")
+    if st.button("추가"):
+        project['characters'].append({"id": str(uuid.uuid4()), "name": name, "tag": "", "desc": desc})
         st.rerun()
 
 
 # =========================================================
-# 5. 화면 렌더링
+# 5. Renderers
 # =========================================================
-
 def render_sidebar(current_proj):
     with st.sidebar:
-        if st.button("🏠 홈으로", use_container_width=True):
-            st.session_state.page = "home"
-            st.rerun()
+        if st.button("🏠 홈으로", use_container_width=True): st.session_state.page = "home"; st.rerun()
         st.markdown(f"## {current_proj['title']}")
-        st.text_input("검색", placeholder="검색...", label_visibility="collapsed")
-        st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-
-        if st.button("👤  등장인물", use_container_width=True):
-            st.session_state.page = "characters"
-            st.rerun()
-        if st.button("📅  플롯", use_container_width=True):
-            st.session_state.page = "plot"
-            st.rerun()
+        if st.button("🔍 검색하기", use_container_width=True): search_modal(current_proj)
 
         st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
-        c_head, c_plus = st.columns([8, 2])
-        c_head.caption("문서")
-        if c_plus.button("➕", key="add_doc_btn"):
+        if st.button("👤  등장인물", use_container_width=True): st.session_state.page = "characters"; st.rerun()
+        if st.button("📅  플롯", use_container_width=True): st.session_state.page = "plot"; st.rerun()
+        # [NEW] 자료실 버튼 추가
+        if st.button("📚  자료실", use_container_width=True): st.session_state.page = "materials"; st.rerun()
+
+        st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
+        c1, c2 = st.columns([8, 2])
+        c1.caption("문서")
+        if c2.button("➕", key="add_doc"):
             new_doc = {"id": str(uuid.uuid4()), "title": "새 문서", "content": ""}
             current_proj['documents'].append(new_doc)
             st.session_state.current_doc_id = new_doc['id']
             st.session_state.page = "editor"
             st.rerun()
-
         if "documents" not in current_proj: current_proj['documents'] = []
         for doc in current_proj['documents']:
             is_active = (doc['id'] == st.session_state.current_doc_id) and (st.session_state.page == "editor")
             btn_type = "primary" if is_active else "secondary"
-            icon = "📄"
-            c_doc, c_menu = st.columns([0.85, 0.15], gap="small", vertical_alignment="center")
+            c_doc, c_opt = st.columns([8.5, 1.5], gap="small")
             with c_doc:
-                if st.button(f"{icon} {doc['title']}", key=f"nav_{doc['id']}", type=btn_type, use_container_width=True):
+                if st.button(f"📄 {doc['title']}", key=f"d_{doc['id']}", type=btn_type, use_container_width=True):
                     st.session_state.current_doc_id = doc['id']
                     st.session_state.page = "editor"
                     st.rerun()
-            with c_menu:
-                with st.popover("⋮", use_container_width=True):
-                    if st.button("✏️ 이름 변경", key=f"ren_d_{doc['id']}", use_container_width=True):
-                        rename_document_modal(doc)
-                    if st.button("📄 복제", key=f"dup_d_{doc['id']}", use_container_width=True):
-                        new_doc = doc.copy()
-                        new_doc['id'] = str(uuid.uuid4())
-                        new_doc['title'] += " (복사본)"
-                        current_proj['documents'].append(new_doc)
-                        st.rerun()
-                    if st.button("🗑 삭제", key=f"del_d_{doc['id']}", type="primary", use_container_width=True):
+            with c_opt:
+                with st.popover("⋮"):
+                    if st.button("이름 변경", key=f"ren_{doc['id']}"): rename_document_modal(doc)
+                    if st.button("삭제", key=f"del_{doc['id']}"):
                         current_proj['documents'].remove(doc)
-                        if st.session_state.current_doc_id == doc['id']:
-                            st.session_state.current_doc_id = None
+                        if st.session_state.current_doc_id == doc['id']: st.session_state.current_doc_id = None
                         st.rerun()
 
 
 def render_home():
-    c1, c2 = st.columns([8, 2])
-    with c1:
-        st.title("내 작품")
-    with c2:
-        if st.button("➕ 새 작품", type="primary", use_container_width=True): create_project_modal()
-    st.markdown("---")
-    if not st.session_state.projects:
-        st.info("작품이 없습니다.")
-        return
+    st.title("내 작품")
+    if st.button("➕ 새 작품"): create_project_modal()
+    st.divider()
     cols = st.columns(3)
     for i, p in enumerate(st.session_state.projects):
         with cols[i % 3]:
             with st.container(border=True):
-                st.subheader(p["title"])
-                st.caption(" ".join([f"#{t}" for t in p["tags"]]) if p["tags"] else "#태그없음")
-                st.text(p["desc"][:40] + "...")
-                st.markdown(f"<small style='color:#8D6E63'>수정: {p['last_edited']}</small>", unsafe_allow_html=True)
-                st.markdown("<br>", unsafe_allow_html=True)
-                b1, b2 = st.columns([3, 1])
-                if b1.button("작업하기", key=f"open_{p['id']}", use_container_width=True):
+                st.subheader(p['title'])
+                st.caption(p['desc'])
+                if st.button("작업하기", key=f"go_{p['id']}", use_container_width=True):
                     st.session_state.current_project_id = p['id']
                     st.session_state.page = "editor"
-                    st.rerun()
-                if b2.button("🗑", key=f"del_{p['id']}", use_container_width=True):
-                    st.session_state.projects.remove(p)
                     st.rerun()
 
 
@@ -319,188 +271,333 @@ def render_editor():
     proj = get_current_project()
     if not proj: st.session_state.page = "home"; st.rerun()
     current_doc = get_current_document(proj)
+    quill_key = f"quill_{current_doc['id']}"
+
     render_sidebar(proj)
 
-    # 1. 헤더 (제목 + Moneta 버튼)
-    # 글자수 통계 컬럼 삭제, 비율 조정 [8, 2]
-    c_title, c_moneta = st.columns([8, 2], gap="small")
+    with st.sidebar:
+        st.divider()
+        if st.button("💾 원고 저장하기", type="primary", use_container_width=True):
+            with st.spinner("저장 중..."):
+                try:
+                    content_val = st.session_state.get(quill_key, current_doc.get('content', ""))
+                    payload = {"doc_id": current_doc['id'], "title": current_doc['title'], "content": content_val}
+                    requests.post("http://127.0.0.1:8000/documents/save", json=payload)
+                    st.toast("저장 완료!", icon="✅")
+                    current_doc['content'] = content_val
+                except Exception as e:
+                    st.error(f"저장 실패: {e}")
 
-    with c_title:
-        # 노션 스타일 제목 수정
+    c1, c2 = st.columns([8, 2])
+    with c1:
         st.markdown('<div class="doc-title-input">', unsafe_allow_html=True)
-        new_title = st.text_input("doc_title", value=current_doc['title'], key=f"title_{current_doc['id']}",
-                                  label_visibility="collapsed", placeholder="제목 없음")
-        if new_title != current_doc['title']:
-            current_doc['title'] = new_title
-            st.rerun()
+        new_t = st.text_input("t", value=current_doc['title'], key=f"t_{current_doc['id']}",
+                              label_visibility="collapsed")
+        if new_t != current_doc['title']: current_doc['title'] = new_t; st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-
-    with c_moneta:
-        btn_label = "✖ 닫기" if st.session_state.show_moneta else "✨ Moneta"
-        btn_type = "secondary" if st.session_state.show_moneta else "primary"
-        if st.button(btn_label, type=btn_type, use_container_width=True):
+    with c2:
+        lbl = "✖ 닫기" if st.session_state.show_moneta else "✨ Moneta"
+        if st.button(lbl, use_container_width=True):
             st.session_state.show_moneta = not st.session_state.show_moneta
             st.rerun()
 
-    # Moneta 패널
+    # Moneta Analysis
     if st.session_state.show_moneta:
         with st.container(border=True):
-            c_desc, c_act = st.columns([7, 3], gap="medium")
-            with c_desc:
-                st.markdown("**🤖 Moneta AI 분석 센터**")
-                st.caption("역사 고증(Clio)과 설정 오류(Story Keeper)를 통합 검토합니다.")
-            with c_act:
-                if st.button("🚀 전체 스캔 시작", type="primary", use_container_width=True):
-                    with st.spinner("모네타가 문서를 읽는 중..."):
-                        time.sleep(1.0)
-                        st.session_state.messages = [
-                            {"role": "clio", "msg": "나폴레옹 사망은 1821년입니다.", "fix": "1821년으로 수정"},
-                            {"role": "story", "msg": "심연의 군주는 소멸했습니다.", "fix": "잔재로 변경"}
-                        ]
-        if st.session_state.messages:
-            r_cols = st.columns(2)
-            for idx, m in enumerate(st.session_state.messages):
-                border_color = "#D32F2F" if m['role'] == "story" else "#0277BD"
-                icon = "🛡️ 설정 충돌" if m['role'] == "story" else "🏛️ 역사 고증"
-                bg_color = "#FFF5F5" if m['role'] == "story" else "#F0F8FF"
-                with r_cols[idx % 2]:
+            if st.button("🚀 전체 스캔 시작", use_container_width=True, type="primary"):
+                st.session_state.analysis_results[current_doc['id']] = []
+                with st.spinner("분석 중..."):
+                    try:
+                        c_val = st.session_state.get(quill_key, "")
+                        res = requests.post("http://127.0.0.1:8000/analyze/text",
+                                            json={"doc_id": current_doc['id'], "content": c_val})
+                        if res.status_code == 200:
+                            st.session_state.analysis_results[current_doc['id']] = res.json()
+                            st.rerun()
+                        else:
+                            st.error(f"서버 에러: {res.text}")
+                    except Exception as e:
+                        st.error(f"서버 연결 실패: {e}")
+
+        msgs = st.session_state.analysis_results.get(current_doc['id'], [])
+        if isinstance(msgs, list):
+            for m in msgs:
+                if isinstance(m, dict):
+                    bg = "#FFF5F5" if m.get('role') == "story" else "#F0F8FF"
+                    border = "#D32F2F" if m.get('role') == "story" else "#0277BD"
+                    st.markdown(f"""
+                    <div class="moneta-card" style="background:{bg}; border-left:4px solid {border}">
+                        <b>{m.get('msg', '')}</b><br>
+                        <span style="font-size:13px; color:#555">💡 제안: {m.get('fix', '')}</span>
+                    </div>""", unsafe_allow_html=True)
+
+    # Quill Editor
+    content = st_quill(value=current_doc.get('content', ""), key=quill_key)
+    if content != current_doc.get('content', ""): current_doc['content'] = content
+
+
+def render_materials():
+    proj = get_current_project()
+    if not proj: st.session_state.page = "home"; st.rerun()
+    if "materials" not in proj: proj['materials'] = []
+
+    render_sidebar(proj)
+    st.title("📚 자료실")
+    st.divider()
+
+    c_list, c_edit = st.columns([1, 2], gap="large")
+
+    # 목록
+    with c_list:
+        c1, c2 = st.columns([2, 1])
+        c1.subheader("목록")
+        if c2.button("＋ 추가", use_container_width=True):
+            new_mat = {"id": str(uuid.uuid4()), "title": "새 자료", "category": "설정", "content": ""}
+            proj['materials'].insert(0, new_mat)
+            st.session_state.selected_material_id = new_mat['id']
+            st.rerun()
+
+        for mat in proj['materials']:
+            is_sel = (mat['id'] == st.session_state.selected_material_id)
+            icon = "🏛️" if mat['category'] == "역사" else "⚙️"
+            if st.button(f"{icon} {mat['title']}", key=f"m_{mat['id']}", use_container_width=True,
+                         type="primary" if is_sel else "secondary"):
+                st.session_state.selected_material_id = mat['id']
+                st.rerun()
+
+    # 상세 편집
+    with c_edit:
+        sel_mat = next((m for m in proj['materials'] if m['id'] == st.session_state.selected_material_id), None)
+        if sel_mat:
+            with st.container(border=True):
+                c1, c2 = st.columns([8, 1])
+                c1.caption("자료 상세 편집")
+                if c2.button("🗑", key=f"del_m_{sel_mat['id']}"):
+                    try:
+                        requests.delete(f"http://127.0.0.1:8000/materials/{sel_mat['id']}")
+                        proj['materials'].remove(sel_mat)
+                        st.session_state.selected_material_id = None
+                        st.toast("삭제됨")
+                        st.rerun()
+                    except:
+                        st.error("삭제 실패 (서버 연결 확인)")
+
+                new_t = st.text_input("제목", value=sel_mat['title'])
+                if new_t != sel_mat['title']: sel_mat['title'] = new_t
+
+                new_c = st.selectbox("분류", ["역사", "설정", "인물", "기타"],
+                                     index=["역사", "설정", "인물", "기타"].index(sel_mat['category']) if sel_mat[
+                                                                                                      'category'] in [
+                                                                                                      "역사", "설정", "인물",
+                                                                                                      "기타"] else 3)
+                if new_c != sel_mat['category']: sel_mat['category'] = new_c
+
+                new_ctx = st.text_area("내용", value=sel_mat['content'], height=300)
+                if new_ctx != sel_mat['content']: sel_mat['content'] = new_ctx
+
+                st.divider()
+                if st.button("💾 저장하기", type="primary", use_container_width=True):
+                    try:
+                        requests.post("http://127.0.0.1:8000/materials/save", json=sel_mat)
+                        st.toast("저장 완료!", icon="✅")
+                    except:
+                        st.error("저장 실패 (서버 연결 확인)")
+        else:
+            st.info("자료를 선택하거나 추가하세요.")
+
+
+def render_plot():
+    proj = get_current_project()
+    if not proj: st.session_state.page = "home"; st.rerun()
+
+    if "plots" not in proj: proj["plots"] = [{"id": "def", "name": "메인 플롯", "desc": "", "parts": []}]
+    if st.session_state.active_plot_idx >= len(proj['plots']): st.session_state.active_plot_idx = 0
+    if "selected_block_id" not in st.session_state: st.session_state.selected_block_id = None
+
+    # 가로 스크롤 CSS
+    st.markdown("""<style>div[data-testid="stVerticalBlockBorderWrapper"] { overflow-x: auto !important; }</style>""",
+                unsafe_allow_html=True)
+
+    render_sidebar(proj)
+
+    # 탭
+    plots = proj['plots']
+    with st.container():
+        cols = st.columns(len(plots) + 1)
+        for i, p in enumerate(plots):
+            with cols[i]:
+                if st.button(p['name'], key=f"pt_{p['id']}",
+                             type="primary" if i == st.session_state.active_plot_idx else "secondary",
+                             use_container_width=True):
+                    st.session_state.active_plot_idx = i;
+                    st.rerun()
+        with cols[-1]:
+            if st.button("＋", key="add_pl"):
+                proj['plots'].append({"id": str(uuid.uuid4()), "name": "새 플롯", "parts": []})
+                st.session_state.active_plot_idx = len(proj['plots']) - 1;
+                st.rerun()
+
+    st.divider()
+    curr_plot = plots[st.session_state.active_plot_idx]
+
+    # 플롯 정보
+    c1, c2 = st.columns([8, 1])
+    with c1:
+        new_pn = st.text_input("플롯 이름", value=curr_plot['name'], key=f"pnn_{curr_plot['id']}",
+                               label_visibility="collapsed")
+        if new_pn != curr_plot['name']: curr_plot['name'] = new_pn
+    with c2:
+        if len(plots) > 1 and st.button("🗑", key="del_pl"):
+            proj['plots'].pop(st.session_state.active_plot_idx)
+            st.session_state.active_plot_idx = 0;
+            st.rerun()
+
+    st.markdown("###### 📜 전체 줄거리")
+    story_k = f"s_{curr_plot['id']}"
+    if 'story' not in curr_plot: curr_plot['story'] = ""
+    new_s = st.text_area("줄거리", value=curr_plot['story'], key=story_k, height=100, label_visibility="collapsed")
+    if new_s != curr_plot['story']: curr_plot['story'] = new_s
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    selected_block = None
+    parent_part = None
+    if st.session_state.selected_block_id:
+        for part in curr_plot['parts']:
+            for block in part['blocks']:
+                if block['id'] == st.session_state.selected_block_id:
+                    selected_block = block
+                    parent_part = part
+                    break
+            if selected_block: break
+
+    # 레이아웃 분할
+    if selected_block:
+        main_cols = st.columns([7, 3])
+        col_board_area = main_cols[0]
+        col_inspector = main_cols[1]
+    else:
+        col_board_area = st.container()
+
+    # 보드
+    with col_board_area:
+        with st.container(border=True):
+            cols = st.columns(len(curr_plot['parts']) + 1)
+            for i, part in enumerate(curr_plot['parts']):
+                with cols[i]:
+                    with st.container(border=True):
+                        h1, h2 = st.columns([4, 1])
+                        with h1:
+                            st.markdown('<div class="ghost-input">', unsafe_allow_html=True)
+                            np = st.text_input(f"pn_{part['id']}", value=part['name'], label_visibility="collapsed")
+                            if np != part['name']: part['name'] = np
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        with h2:
+                            with st.popover("⋮"):
+                                if st.button("⬅️", key=f"l_{part['id']}"):
+                                    if i > 0:
+                                        curr_plot['parts'][i], curr_plot['parts'][i - 1] = curr_plot['parts'][i - 1], \
+                                        curr_plot['parts'][i]
+                                        st.rerun()
+                                if st.button("➡️", key=f"r_{part['id']}"):
+                                    if i < len(curr_plot['parts']) - 1:
+                                        curr_plot['parts'][i], curr_plot['parts'][i + 1] = curr_plot['parts'][i + 1], \
+                                        curr_plot['parts'][i]
+                                        st.rerun()
+                                if st.button("🗑", key=f"dp_{part['id']}"):
+                                    curr_plot['parts'].remove(part);
+                                    st.rerun()
+                        st.markdown("---")
+                        for block in part['blocks']:
+                            txt = block['content'] if block['content'] else "내용 없음"
+                            is_sel = (block['id'] == st.session_state.selected_block_id)
+                            if st.button(txt[:20] + ("..." if len(txt) > 20 else ""), key=f"b_{block['id']}",
+                                         type="primary" if is_sel else "secondary", use_container_width=True):
+                                st.session_state.selected_block_id = block['id']
+                                st.rerun()
+                        if st.button("＋ 블록", key=f"ab_{part['id']}"):
+                            part['blocks'].append({"id": str(uuid.uuid4()), "content": ""})
+                            st.rerun()
+
+            with cols[-1]:
+                if not st.session_state.is_adding_part:
+                    if st.button("＋ 파트 추가"): st.session_state.is_adding_part = True; st.rerun()
+                else:
+                    with st.container(border=True):
+                        np_val = st.text_input("새 파트명")
+                        c1, c2 = st.columns(2)
+                        if c1.button("취소"): st.session_state.is_adding_part = False; st.rerun()
+                        if c2.button("추가"):
+                            curr_plot['parts'].append(
+                                {"id": str(uuid.uuid4()), "name": np_val if np_val else "새 파트", "blocks": []})
+                            st.session_state.is_adding_part = False;
+                            st.rerun()
+
+    # 인스펙터
+    if selected_block and 'col_inspector' in locals():
+        with col_inspector:
+            with st.container(border=True):
+                h1, h2 = st.columns([1, 8])
+                with h1:
+                    if st.button("✕", key="close_insp"):
+                        st.session_state.selected_block_id = None
+                        st.rerun()
+                with h2:
                     st.markdown(
-                        f"""<div class="moneta-card" style="border-left: 4px solid {border_color}; background-color: {bg_color};"><div style="font-weight:bold; margin-bottom:6px; color:#455A64;">{icon}</div><div style="margin-bottom:8px; font-size:15px; color:#263238;">{m['msg']}</div><div style="background:#FFFFFF; padding:8px 12px; border-radius:4px; font-size:13px; color:#546E7A; border:1px solid #CFD8DC; display:inline-block;">💡 제안: <b>{m['fix']}</b></div></div>""",
+                        f'<div style="color:#888; font-size:13px; margin-top:5px">↳ <b>{parent_part["name"]}</b></div>',
                         unsafe_allow_html=True)
 
-    # 기본 텍스트 에디터 (st.text_area)
-    content = st.text_area("본문", value=current_doc['content'], height=800, label_visibility="collapsed",
-                           key=f"editor_{current_doc['id']}")
-    if content != current_doc['content']:
-        current_doc['content'] = content
+                with st.expander("옵션"):
+                    if st.button("복제", use_container_width=True):
+                        new_bk = selected_block.copy()
+                        new_bk['id'] = str(uuid.uuid4())
+                        parent_part['blocks'].insert(parent_part['blocks'].index(selected_block) + 1, new_bk)
+                        st.rerun()
+                    if st.button("삭제", type="primary", use_container_width=True):
+                        parent_part['blocks'].remove(selected_block)
+                        st.session_state.selected_block_id = None
+                        st.rerun()
+
+                st.markdown("#### 블록 편집")
+                new_content = st.text_area("내용", value=selected_block.get('content', ''), height=200,
+                                           key=f"ed_c_{selected_block['id']}")
+                if new_content != selected_block.get('content', ''):
+                    selected_block['content'] = new_content
+
+                st.caption("등장인물")
+                char_opts = [c['name'] for c in proj.get('characters', [])]
+                current_chars = [c for c in selected_block.get('characters', []) if c in char_opts]
+                new_chars = st.multiselect("인물 선택", options=char_opts, default=current_chars,
+                                           key=f"ed_ch_{selected_block['id']}")
+                if new_chars != current_chars: selected_block['characters'] = new_chars
+
+                st.caption("관련 문서")
+                doc_opts = [d['title'] for d in proj.get('documents', [])]
+                current_docs = [d for d in selected_block.get('docs', []) if d in doc_opts]
+                new_docs = st.multiselect("문서 선택", options=doc_opts, default=current_docs,
+                                          key=f"ed_doc_{selected_block['id']}")
+                if new_docs != current_docs: selected_block['docs'] = new_docs
 
 
 def render_characters():
     proj = get_current_project()
     if not proj: st.session_state.page = "home"; st.rerun()
     render_sidebar(proj)
-    c1, c2 = st.columns([8, 2])
-    with c1:
-        st.markdown(f"## 등장인물 <span style='font-size:18px; color:grey'>({len(proj['characters'])})</span>",
-                    unsafe_allow_html=True)
-    with c2:
-        if st.button("＋ 새 인물", type="primary", use_container_width=True):
-            add_character_modal(proj)
+    st.title("등장인물")
+    if st.button("＋ 인물 추가"): add_character_modal(proj)
     st.divider()
-    if not proj['characters']:
-        st.info("등록된 인물이 없습니다.")
-        return
-    h1, h2, h3 = st.columns([2, 5, 2])
-    h1.caption("이름")
-    h2.caption("태그 및 설명")
-    h3.caption("관리")
     for char in proj['characters']:
         with st.container(border=True):
-            c1, c2, c3 = st.columns([2, 5, 2])
-            with c1:
-                if st.button(f"**{char['name']}**", key=f"btn_nm_{char['id']}", use_container_width=True):
-                    edit_character_modal(proj, char['id'])
-            with c2:
-                st.caption(f"#{char['tag']}")
-                st.write(char['desc'])
-            with c3:
-                if st.button("🗑", key=f"del_c_{char['id']}"):
-                    proj['characters'].remove(char)
-                    st.rerun()
-
-
-def render_plot():
-    proj = get_current_project()
-    if not proj: st.session_state.page = "home"; st.rerun()
-    if "plots" not in proj: proj["plots"] = [{"id": "def", "name": "메인 플롯", "desc": "기본 플롯", "parts": []}]
-    render_sidebar(proj)
-
-    plots = proj['plots']
-    t_cols = st.columns([len(plots) * 2, 8])
-    with t_cols[0]:
-        tab_cols = st.columns(len(plots) + 1)
-        for i, plot in enumerate(plots):
-            with tab_cols[i]:
-                btn_type = "primary" if i == st.session_state.active_plot_idx else "secondary"
-                if st.button(plot['name'], key=f"tab_{plot['id']}", type=btn_type, use_container_width=True):
-                    st.session_state.active_plot_idx = i
-                    st.rerun()
-        with tab_cols[-1]:
-            if st.button("＋", key="add_plot_btn"):
-                proj['plots'].append({"id": str(uuid.uuid4()), "name": "새 플롯", "desc": "", "parts": []})
-                st.session_state.active_plot_idx = len(proj['plots']) - 1
+            st.subheader(char['name'])
+            st.caption(char['tag'])
+            st.write(char['desc'])
+            if st.button("삭제", key=f"dc_{char['id']}"):
+                proj['characters'].remove(char);
                 st.rerun()
-    st.divider()
-
-    if st.session_state.active_plot_idx >= len(plots): st.session_state.active_plot_idx = 0
-    curr_plot = plots[st.session_state.active_plot_idx]
-
-    st.markdown(f"### {curr_plot['name']} <span style='font-size:14px; color:#999'>🖊️</span>", unsafe_allow_html=True)
-    new_plot_name = st.text_input("플롯 이름", value=curr_plot['name'], key=f"pn_main_{curr_plot['id']}",
-                                  label_visibility="collapsed")
-    if new_plot_name != curr_plot['name']: curr_plot['name'] = new_plot_name
-
-    new_plot_desc = st.text_input("플롯 설명", value=curr_plot['desc'], key=f"pd_main_{curr_plot['id']}",
-                                  placeholder="플롯 설명 입력...", label_visibility="collapsed")
-    if new_plot_desc != curr_plot['desc']: curr_plot['desc'] = new_plot_desc
-
-    st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
-    parts = curr_plot['parts']
-    cols = st.columns(len(parts) + 1)
-
-    for i, part in enumerate(parts):
-        with cols[i]:
-            with st.container(border=True):
-                h1, h2 = st.columns([5, 1])
-                with h1:
-                    st.markdown('<div class="part-title-input">', unsafe_allow_html=True)
-                    new_name = st.text_input("p_name", value=part['name'], key=f"pnm_{part['id']}",
-                                             label_visibility="collapsed")
-                    if new_name != part['name']: part['name'] = new_name
-                    st.markdown('</div>', unsafe_allow_html=True)
-                with h2:
-                    with st.popover("⋮"):
-                        if st.button("복제", key=f"dup_{part['id']}", use_container_width=True):
-                            new_part = part.copy()
-                            new_part['id'] = str(uuid.uuid4())
-                            curr_plot['parts'].insert(i + 1, new_part)
-                            st.rerun()
-                        if st.button("삭제", key=f"del_{part['id']}", type="primary", use_container_width=True):
-                            curr_plot['parts'].remove(part)
-                            st.rerun()
-                st.markdown('<div class="part-desc-input">', unsafe_allow_html=True)
-                new_desc = st.text_input("p_desc", value=part['desc'], key=f"pdc_{part['id']}",
-                                         label_visibility="collapsed", placeholder="설명")
-                if new_desc != part['desc']: part['desc'] = new_desc
-                st.markdown('</div>', unsafe_allow_html=True)
-                st.markdown('<div class="new-block-input">', unsafe_allow_html=True)
-                new_block = st.text_input("new_blk", key=f"nb_{part['id']}", placeholder="+ 새 블록",
-                                          label_visibility="collapsed")
-                if new_block:
-                    part['blocks'].append({"id": str(uuid.uuid4()), "content": new_block})
-                    st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
-                st.markdown("---")
-                for block in part['blocks']:
-                    st.markdown('<div class="block-card-container">', unsafe_allow_html=True)
-                    b1, b2 = st.columns([6, 1])
-                    with b1:
-                        st.write(block['content'])
-                    with b2:
-                        with st.popover("⋮"):
-                            if st.button("삭제", key=f"rm_b_{block['id']}", type="primary", use_container_width=True):
-                                part['blocks'].remove(block)
-                                st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
-    with cols[-1]:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("＋ 새 파트", key="add_part_btn", use_container_width=True):
-            curr_plot['parts'].append({"id": str(uuid.uuid4()), "name": "새 파트", "desc": "", "blocks": []})
-            st.rerun()
 
 
 # =========================================================
-# 6. 메인 라우팅
+# 6. Main Routing
 # =========================================================
 if st.session_state.page == "home":
     render_home()
@@ -510,3 +607,5 @@ elif st.session_state.page == "characters":
     render_characters()
 elif st.session_state.page == "plot":
     render_plot()
+elif st.session_state.page == "materials":
+    render_materials()

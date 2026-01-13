@@ -13,11 +13,111 @@ from app.service.history.solar_client import HistoryLLMClient
 from app.service.history.ingest_history import normalize_payload
 #from app.deps import get_manuscript_analyzer
 from app.service.manuscript.analyzer import ManuscriptAnalyzer
+from typing import List, Optional
+from fastapi.middleware.cors import CORSMiddleware
+import uuid
 
 app = FastAPI(
     title="Moneta Common Tool API",
     description="팀 공용 캐릭터 데이터베이스 (관계 포함 JSON 저장)",
 )
+
+# CORS 설정 (Streamlit과의 통신 허용)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --------------------------------------------------------------------------
+# [Models] 데이터 모델
+# --------------------------------------------------------------------------
+
+class DocumentPayload(BaseModel):
+    doc_id: str
+    title: str = ""
+    content: str
+
+class MaterialPayload(BaseModel):
+    id: str
+    title: str
+    category: str
+    content: str
+# --------------------------------------------------------------------------
+# [API] 문서 (Documents)
+# --------------------------------------------------------------------------
+
+@app.post("/documents/save", tags=["Document"])
+def api_save_document(doc: DocumentPayload):
+    print(f"📥 [Doc Save] {doc.title} (ID: {doc.doc_id}) - {len(doc.content)}자")
+    return {"status": "success", "msg": "문서가 저장되었습니다."}
+
+
+# --------------------------------------------------------------------------
+# [API] 분석 (Moneta AI)
+# --------------------------------------------------------------------------
+
+@app.post("/analyze/text", tags=["Analysis"])
+def api_analyze_text(payload: DocumentPayload):
+    content = payload.content
+    print(f"🔄 [Analyze] 요청: {len(content)}자")
+
+    # 더미 분석 로직 (키워드에 따라 다른 반응)
+    results = []
+
+    # 1. 역사 고증 (Clio)
+    if "1820" in content or "나폴레옹" in content:
+        results.append({
+            "role": "clio",
+            "msg": "나폴레옹은 1821년에 사망했습니다. 1820년에는 세인트헬레나 섬에 유배 중이었습니다.",
+            "fix": "연도 확인 필요"
+        })
+    else:
+        results.append({
+            "role": "clio",
+            "msg": "역사적 배경 검토 완료 (특이사항 없음)",
+            "fix": "-"
+        })
+
+    # 2. 설정 오류 (Story Keeper)
+    if "대검" in content and "사격" in content:
+        results.append({
+            "role": "story",
+            "msg": "주인공은 '대검' 사용자인데 '사격'을 하고 있습니다.",
+            "fix": "무기 설정 충돌"
+        })
+    else:
+        results.append({
+            "role": "story",
+            "msg": "설정 충돌 없음",
+            "fix": "-"
+        })
+
+    return results
+
+
+# --------------------------------------------------------------------------
+# [API] 자료실 (Materials)
+# --------------------------------------------------------------------------
+
+@app.post("/materials/save", tags=["Materials"])
+def api_save_material(mat: MaterialPayload):
+    print(f"📚 [Mat Save] {mat.title} ({mat.category})")
+    return {"status": "success", "msg": f"자료 '{mat.title}' 저장 완료"}
+
+
+@app.delete("/materials/{material_id}", tags=["Materials"])
+def api_delete_material(material_id: str):
+    print(f"🗑️ [Mat Delete] ID: {material_id}")
+    return {"status": "success", "msg": "자료 삭제 완료"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
 
 @app.on_event("startup")
 async def startup_event():

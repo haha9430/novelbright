@@ -1,0 +1,10 @@
+ŠQ“%Msysdb00004-tenants-databases.sqlite.sqlCREATE TABLE IF NOT EXISTS tenants (
+    id TEXT PRIMARY KEY,
+    UNIQUE (id)
+);
+
+CREATE TABLE IF NOT EXISTS databases (
+    id TEXT PRIMARY KEY, -- unique globally
+    name TEXT NOT NULL, -- unique per tenant
+    tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    UNIQUE (tenant_id, name) -- Ensure that a tenant has only one data
