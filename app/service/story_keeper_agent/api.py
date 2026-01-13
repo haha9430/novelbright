@@ -1,7 +1,7 @@
-# app/service/story_keeper_agent/api.py
 import sys
 import os
 import json
+import inspect
 
 sys.path.insert(0, os.getcwd())
 
@@ -24,42 +24,44 @@ router = APIRouter(prefix="/story", tags=["story-keeper"])
 manager = PlotManager()
 
 
-def _extract_text_from_response(res):
-    if isinstance(res, dict):
-        return res.get("full_text") or res.get("content") or res.get("text") or res.get("body") or ""
-    if hasattr(res, "full_text"):
-        return res.full_text
-    if hasattr(res, "content"):
-        return res.content
-    if hasattr(res, "text"):
-        return res.text
-    if hasattr(res, "body"):
-        return res.body
-    return str(res)
-
-
-def _load_plot_world() -> dict:
-    here = os.getcwd()
-    p1 = os.path.join(here, "app", "data", "plot.json")
-
-    if os.path.exists(p1):
-        with open(p1, "r", encoding="utf-8") as f:
+def _safe_read_json(path: str) -> dict:
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
-
-    try:
-        world = manager._read_json(manager.global_setting_file, default={})
-        return world if isinstance(world, dict) else {}
     except Exception:
         return {}
+
+
+def _load_plot_config() -> dict:
+    here = os.getcwd()
+    path = os.path.join(here, "app", "data", "plot.json")
+    return _safe_read_json(path)
+
+
+def _extract_world_from_plot(plot_config: dict) -> dict:
+    if not isinstance(plot_config, dict):
+        return {}
+    for k in ("world", "world_setting", "worldSettings", "settings", "setting", "global"):
+        v = plot_config.get(k)
+        if isinstance(v, dict) and v:
+            return v
+    return plot_config if isinstance(plot_config, dict) else {}
 
 
 def _load_story_history() -> dict:
-    try:
-        data = manager._read_json(manager.history_file, default={})
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    here = os.getcwd()
+    path = os.path.join(
+        here,
+        "app",
+        "service",
+        "story_keeper_agent",
+        "load_state",
+        "story_history.json",
+    )
+    return _safe_read_json(path)
 
 
 def _load_character_config() -> dict:
@@ -68,9 +70,13 @@ def _load_character_config() -> dict:
     if not os.path.exists(path):
         return {"characters": []}
 
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return {"characters": []}
 
+    # dict(name->obj) / list 둘 다 대응
     if isinstance(data, dict):
         chars = []
         for name, d in data.items():
@@ -87,36 +93,93 @@ def _load_character_config() -> dict:
     return {"characters": []}
 
 
+def _call_upsert_character(name: str, text: str):
+    """
+    upsert_character() 시그니처가 프로젝트마다 달라서
+    여기서 자동으로 맞춰서 호출한다.
+    """
+    try:
+        sig = inspect.signature(upsert_character)
+        params = sig.parameters
+
+        # 키워드 인자 후보들 (프로젝트마다 이름 달라서 대비)
+        text_keys = [
+            "text",
+            "content",
+            "profile",
+            "description",
+            "setting",
+            "settings",
+            "raw",
+            "data",
+            "prompt",
+            "value",
+            "info",
+            "bio",
+        ]
+
+        kwargs = {}
+
+        # name 키가 따로 있으면 맞춰줌 (대부분 name이라서 기본은 name)
+        if "name" in params:
+            kwargs["name"] = name
+        else:
+            # name이 없으면 1번째 positional로 밀어넣는 쪽으로 간다
+            pass
+
+        # text 계열 파라미터 찾기
+        chosen_text_key = None
+        for k in text_keys:
+            if k in params:
+                chosen_text_key = k
+                break
+
+        if chosen_text_key:
+            kwargs[chosen_text_key] = text
+            # name 키워드가 없을 때는 positional+keyword 섞이면 위험하니 안전하게 처리
+            if "name" in params:
+                return upsert_character(**kwargs)
+            else:
+                return upsert_character(name, **{chosen_text_key: text})
+
+        # **kwargs 받는 함수면 그냥 text로 넣어보기
+        if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+            return upsert_character(name=name, text=text)
+
+        # 마지막 수단: (name, text) positional로 호출
+        return upsert_character(name, text)
+
+    except TypeError:
+        # 혹시 위에서 또 안 맞으면 최종 fallback
+        return upsert_character(name, text)
+    except Exception:
+        raise
+
+
 # =========================
-# 1) World Setting
+# 1) World/Plot Setting
 # =========================
 @router.post(
     "/world_setting",
-    summary="World Setting",
-    description="세계관/설정 입력 -> 저장",
+    summary="World/Plot Setting",
+    description="설정 입력 -> plot.json 갱신(PlotManager 내부 저장)",
 )
 def world_setting(text: str = Body(..., media_type="text/plain")):
     return manager.update_global_settings(text)
 
 
 # =========================
-# 2) Character Setting (✅ 입력칸 2개로 뜨게)
+# 2) Character Setting
 # =========================
 @router.post(
     "/character_setting",
     summary="Character Setting",
-    description="이름(key) + 특징(설명) 2칸 입력 -> characters.json에 upsert",
+    description="캐릭터 설정 입력 -> 캐릭터 DB 업데이트",
 )
-def character_setting(
-    name: str = Form(..., description="캐릭터 이름(키값)"),
-    features: str = Form(..., description="캐릭터 특징/설명(서술/양식 아무거나)"),
-):
+def character_setting(name: str = Form(...), text: str = Form(...)):
     try:
-        return upsert_character(name, features)
+        return _call_upsert_character(name=name, text=text)
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -126,31 +189,37 @@ def character_setting(
 @router.post(
     "/manuscript_feedback",
     summary="Manuscript Feedback",
-    description="원고(회차) 입력 -> 청크 -> 저장/상태 로드 -> 규칙 검사 -> 수정안 반환",
+    description="원고 업로드 -> plot.json/characters.json/story_history.json과 비교 피드백",
 )
 def manuscript_feedback(
     episode_no: int,
-    raw_text: str = Body(..., media_type="text/plain"),
+    text: str = Body(..., media_type="text/plain"),
 ):
     try:
-        chunks = split_into_chunks(raw_text, max_len=2500, min_len=1500)
+        full_text_str = text or ""
+        if not full_text_str.strip():
+            raise ValueError("원고가 비어있습니다.")
 
-        try:
-            req = IngestEpisodeRequest(episode_no=episode_no, chunks=chunks)
-        except ValidationError:
-            req = IngestEpisodeRequest(episode_no=episode_no, text_chunks=chunks)
+        # ✅ plot.json 로드 (세계관 포함)
+        plot_config = _load_plot_config()
+        world = _extract_world_from_plot(plot_config)
 
-        res = ingest_episode(req)
-        full_text_str = _extract_text_from_response(res)
-
-        manager.summarize_and_save(episode_no, full_text_str)
-
-        world = _load_plot_world()
+        # ✅ story_history.json 로드
         history = _load_story_history()
-        story_state = {"world": world, "history": history}
 
+        # ✅ characters.json 로드
         character_config = _load_character_config()
 
+        # 기존 PlotManager/기존 코드 호환용 (world/history 둘 다)
+        story_state = {"world": world, "history": history}
+
+        # 청크 split
+        chunks = split_into_chunks(full_text_str)
+
+        # ingest
+        ingest_episode(req=IngestEpisodeRequest(episode_no=episode_no, text_chunks=chunks))
+
+        # extract_facts (원고 원문도 함께 전달)
         episode_facts = manager.extract_facts(episode_no, full_text_str, story_state)
 
         if isinstance(episode_facts, dict):
@@ -158,8 +227,7 @@ def manuscript_feedback(
         else:
             episode_facts = {"raw_text": full_text_str}
 
-        plot_config = {}
-
+        # ✅ JSON 비교 기반 룰만
         issues = check_consistency(
             episode_facts=episode_facts,
             character_config=character_config,
@@ -167,26 +235,35 @@ def manuscript_feedback(
             story_state=story_state,
         )
 
+        # issues -> edits 변환
         edits = issues_to_edits(
             issues,
             episode_no=episode_no,
             raw_text=full_text_str,
         )
 
+        issues_count = len(issues) if isinstance(issues, list) else 0
+        edits_count = len(edits) if isinstance(edits, list) else 0
+
         return {
             "episode_no": episode_no,
+            "issues": issues,
             "edits": edits,
             "debug": {
-                "issue_count": len(edits),
+                "issues_count": issues_count,
+                "edits_count": edits_count,
                 "full_text_len": len(full_text_str or ""),
+                "plot_loaded": bool(plot_config),
                 "world_loaded": bool(world),
-                "history_count": len(history) if isinstance(history, dict) else 0,
+                "history_loaded": bool(history),
                 "character_count": len(character_config.get("characters", []))
                 if isinstance(character_config, dict)
                 else 0,
             },
         }
 
+    except ValidationError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         import traceback
 

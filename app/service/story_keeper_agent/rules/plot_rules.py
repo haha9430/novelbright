@@ -15,11 +15,6 @@ load_dotenv()
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
-def _get_world(story_state: Dict[str, Any]) -> Dict[str, Any]:
-    w = story_state.get("world", {})
-    return w if isinstance(w, dict) else {}
-
-
 def _get_history(story_state: Dict[str, Any]) -> Dict[str, Any]:
     h = story_state.get("history", {})
     return h if isinstance(h, dict) else {}
@@ -30,6 +25,16 @@ def _get_full_text(episode_facts: Dict[str, Any]) -> str:
     if isinstance(raw, str) and raw.strip():
         return raw
     return ""
+
+
+def _extract_world_from_plot(plot_config: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(plot_config, dict):
+        return {}
+    for k in ("world", "world_setting", "worldSettings", "settings", "setting", "global"):
+        v = plot_config.get(k)
+        if isinstance(v, dict) and v:
+            return v
+    return {}
 
 
 def _extract_json(text: str) -> Optional[Dict[str, Any]]:
@@ -53,42 +58,66 @@ def check_plot_consistency(
     if not full_text.strip():
         return []
 
-    world = _get_world(story_state)
     history = _get_history(story_state)
+    world = _extract_world_from_plot(plot_config)
 
     llm = ChatUpstage(model="solar-pro")
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """너는 ‘초보 작가를 돕는 웹소설 총괄 편집장’이다.
+        ("system", """
+너는 ‘원고-이전흐름/플롯(JSON) 비교기’다.
 
-[판단 우선순위 규칙(최상위)]
-- 이 시스템은 ‘사실관계(역사, 과학, 현실 지식)’보다 ‘세계관 설정’과 ‘등장인물 설정’을 항상 우선한다.
-- 현실과 다르더라도 세계관/캐릭터 설정이 허용하면 오류가 아니다.
+✅ 핵심 원칙
+- JSON(스토리 히스토리/플롯)에 없는 것은 “모름/열림”이다.
+- 요약/히스토리의 표현이 다르다고 다 오류가 아니다.
+- 오직 “확정된 사건/상태”가 뒤집힐 때만 잡는다.
 
-목표:
-- [이전 회차 기록]과 [이번 원고] 사이에서 독자가 “앞뒤가 안 맞는다/왜 이렇게 됐지”로 헷갈릴 지점만 지적한다.
-- 외부 상식/고증으로 판단하지 않는다.
-- 작가의 문체/개성은 건드리지 않는다.
+✅ 이슈로 잡아도 되는 것
+- 이전화에서 확정된 사건이 원고에서 반대로 서술됨
+  (예: A가 죽었다 → 원고에서 생존)
+- 특정 인물 관계/소유/장소가 확정인데 원고가 뒤집음
+- 플롯에서 “반드시/절대/금지/오직” 같은 제약 위반
 
-판단 기준:
-1) plot: 원인 없이 결과가 튀거나, 중요한 전환이 설명 없이 생겨 흐름이 끊기는 경우만.
-2) continuity: 시간/상태/인물 인식/사건 순서가 앞 회차 기록과 명확히 충돌할 때만.
-3) tone: 문체 교정 금지. 오직 “history에서 유지되던 서술 관점/호칭/핵심 표현”이 특별한 계기 없이 바뀌어 독자가 헷갈릴 때만.
+🚫 금지
+- “디테일이 다르다” 수준(요약 방식 차이) 태클
+- 현실/고증/상식 근거
+- 작가 의도/문장 평가
 
-출력 규칙:
-- 반드시 JSON만 출력
-- 최상위 키: issues (리스트)
-- 각 항목 필드: type(plot|continuity|tone), title, sentence, reason, rewrite, severity
-- reason: 독자 관점에서 왜 혼란인지 1~2문장 (메타 발언 금지)
-- rewrite: 느낌 바꾸지 말고 최소 보정만
+========================
+🧷 issue 조건 (필수)
+========================
+1) key_path: plot/history JSON의 경로
+2) json_anchor: JSON에 적힌 확정 문장 그대로
+3) manuscript_sentence: 원고 발췌 그대로
+
+========================
+📤 출력 (JSON만)
+========================
+{{
+  "issues": [
+    {{
+      "type": "plot|continuity",
+      "title": "짧은 제목",
+      "sentence": "원고 발췌(필수)",
+      "reason": "key_path: ...\\njson_anchor: ...\\nconflict: ...",
+      "rewrite": "앵커 위반만 제거한 최소 수정(필수)",
+      "severity": "low|medium|high"
+    }}
+  ]
+}}
+
+issues 없으면 {{ "issues": [] }}.
 """),
-        ("human", """[이전 회차 기록]
+        ("human", """[story_history_json]
 {history}
 
-[세계관 설정]
+[plot_json]
+{plot_config}
+
+[world_json]
 {world}
 
-[이번 원고]
+[manuscript]
 {full_text}
 """),
     ])
@@ -96,6 +125,7 @@ def check_plot_consistency(
     try:
         raw = (prompt | llm).invoke({
             "history": json.dumps(history, ensure_ascii=False),
+            "plot_config": json.dumps(plot_config, ensure_ascii=False),
             "world": json.dumps(world, ensure_ascii=False),
             "full_text": full_text,
         })
@@ -106,8 +136,8 @@ def check_plot_consistency(
             type="plot",
             title="플롯 룰 검사 실패",
             sentence=None,
-            reason="규칙 엔진이 동작하지 않아 수정사항을 생성할 수 없습니다.",
-            rewrite=f"LLM 호출/파싱 실패: {repr(e)}",
+            reason="LLM 호출/파싱 실패",
+            rewrite=f"{repr(e)}",
             severity="high",
         )]
 
@@ -121,13 +151,14 @@ def check_plot_consistency(
             continue
 
         typ = str(it.get("type") or "plot").strip().lower()
-        if typ not in ("plot", "continuity", "tone"):
+        if typ not in ("plot", "continuity"):
             typ = "plot"
 
-        title = str(it.get("title") or "플롯 수정 필요").strip()
+        title = str(it.get("title") or "플롯/연속성 앵커 충돌").strip()
 
         sentence = it.get("sentence")
-        sentence = sentence.strip() if isinstance(sentence, str) and sentence.strip() else None
+        sentence = sentence if isinstance(sentence, str) else ""
+        sentence = sentence.strip() or None
 
         reason = str(it.get("reason") or "").strip()
         rewrite = str(it.get("rewrite") or "").strip()
@@ -136,7 +167,7 @@ def check_plot_consistency(
         if severity not in ("low", "medium", "high"):
             severity = "medium"
 
-        if not reason or not rewrite:
+        if not sentence or not reason or not rewrite:
             continue
 
         out.append(Issue(

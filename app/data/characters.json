@@ -22,5 +22,89 @@
             "나이팅게일: 크림 전쟁 야전병원 체계 구축 협업",
             "지역 유지: 인종차별 시대에 후원자"
         ]
+    },
+    "로버트 리스턴": {
+        "name": "로버트 리스턴",
+        "age_gender": "none",
+        "job_status": "외과의, 의사, 교수, 군의관, 의대",
+        "core_traits": [
+            "현대 외과(일반/외상) 전문 지식과 수술 실력 보유",
+            "전쟁에 군의관으로 참여하며 치료/임상 경험 축적"
+        ],
+        "personality": {
+            "pros": "none",
+            "cons": "none"
+        },
+        "outer_goal": "none",
+        "inner_goal": "none",
+        "trauma_weakness": "none",
+        "speech_habit": "none",
+        "relationships": [
+            "리스턴: 동료/협업 인물(본문 기반)"
+        ]
+    },
+    "조지프 리스터": {
+        "name": "조지프 리스터",
+        "age_gender": "none",
+        "job_status": "의사",
+        "core_traits": "none",
+        "personality": {
+            "pros": "none",
+            "cons": "none"
+        },
+        "outer_goal": "none",
+        "inner_goal": "none",
+        "trauma_weakness": "none",
+        "speech_habit": "none",
+        "relationships": [
+            "지역 유지: 인종차별 시대에 후원자"
+        ]
+    },
+    "엘프리드": {
+        "name": "엘프리드",
+        "age_gender": "none",
+        "job_status": "none",
+        "core_traits": "none",
+        "personality": {
+            "pros": "none",
+            "cons": "none"
+        },
+        "outer_goal": "none",
+        "inner_goal": "none",
+        "trauma_weakness": "none",
+        "speech_habit": "none",
+        "relationships": "none"
+    },
+    "콜린": {
+        "name": "콜린",
+        "age_gender": "none",
+        "job_status": "의사, 교수, 면허",
+        "core_traits": "none",
+        "personality": {
+            "pros": "none",
+            "cons": "none"
+        },
+        "outer_goal": "none",
+        "inner_goal": "none",
+        "trauma_weakness": "none",
+        "speech_habit": "none",
+        "relationships": [
+            "리스턴: 동료/협업 인물(본문 기반)"
+        ]
+    },
+    "존 스노우": {
+        "name": "존 스노우",
+        "age_gender": "none",
+        "job_status": "의대",
+        "core_traits": "none",
+        "personality": {
+            "pros": "none",
+            "cons": "none"
+        },
+        "outer_goal": "none",
+        "inner_goal": "none",
+        "trauma_weakness": "none",
+        "speech_habit": "none",
+        "relationships": "none"
     }
 }

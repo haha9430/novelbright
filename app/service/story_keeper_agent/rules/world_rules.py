@@ -8,16 +8,11 @@ from dotenv import load_dotenv
 from langchain_upstage import ChatUpstage
 from langchain_core.prompts import ChatPromptTemplate
 
-from .check_consistency import Issue, normalize_issue_type
+from .check_consistency import Issue
 
 load_dotenv()
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
-
-
-def _get_world(story_state: Dict[str, Any]) -> Dict[str, Any]:
-    w = story_state.get("world", {})
-    return w if isinstance(w, dict) else {}
 
 
 def _get_full_text(episode_facts: Dict[str, Any]) -> str:
@@ -25,6 +20,16 @@ def _get_full_text(episode_facts: Dict[str, Any]) -> str:
     if isinstance(raw, str) and raw.strip():
         return raw
     return ""
+
+
+def _extract_world_from_plot(plot_config: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(plot_config, dict):
+        return {}
+    for k in ("world", "world_setting", "worldSettings", "settings", "setting", "global"):
+        v = plot_config.get(k)
+        if isinstance(v, dict) and v:
+            return v
+    return plot_config if isinstance(plot_config, dict) else {}
 
 
 def _extract_json(text: str) -> Optional[Dict[str, Any]]:
@@ -41,49 +46,70 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
 
 def check_world_consistency(
     episode_facts: Dict[str, Any],
-    story_state: Dict[str, Any],
+    plot_config: Dict[str, Any],
 ) -> List[Issue]:
-    world = _get_world(story_state)
     full_text = _get_full_text(episode_facts)
+    if not full_text.strip():
+        return []
 
-    if not full_text.strip() or not world:
+    world = _extract_world_from_plot(plot_config)
+    if not isinstance(world, dict) or not world:
         return []
 
     llm = ChatUpstage(model="solar-pro")
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """너는 ‘초보 작가를 돕는 웹소설 총괄 편집장’이다.
+        ("system", """
+너는 ‘원고-세계관(JSON) 비교기’다.
 
-[판단 우선순위 규칙(최상위)]
-- 이 시스템은 ‘사실관계(역사, 과학, 현실 지식)’보다 ‘세계관 설정’과 ‘등장인물 설정’을 항상 우선한다.
-- 현실과 다르더라도 세계관/캐릭터 설정이 허용하면 오류가 아니다.
+✅ 핵심 원칙
+- JSON은 “전부”가 아니라 “앵커(확정/제약)”만 들어있는 기준이다.
+- JSON에 ‘없다’는 것은 “모름/열림”이다.
+- 따라서 JSON에 없는 정보를 원고가 말해도 오류가 아니다.
 
-목표:
-- [세계관 설정]과 [원고]를 비교해 독자가 “설정 충돌로 헷갈릴” 지점만 최소한으로 지적한다.
-- 작가의 의도/문체/개성은 기본적으로 정상으로 간주한다.
+✅ 이슈로 잡아도 되는 것(앵커 충돌만)
+- JSON이 명시적으로 “확정”한 사실을 원고가 뒤집음
+- JSON이 명시적으로 “금지/불가/불가능/절대”로 제한한 것을 원고가 실행
+- JSON이 명시적으로 “반드시/항상/오직”이라고 규정한 것을 원고가 위반
 
-판단 기준(중요):
-1) world(세계관 오류)는 ‘명백한 설정 충돌’ + ‘본문에서 공개적으로 작동’ + ‘그런데도 자연스러운 반응/맥락이 없어 독자가 혼란’일 때만 잡아라.
-2) 다음은 world 오류가 아니다: 주인공의 생각/내면독백/혼잣말, 높은 지식 수준, 현대적 비유/표현, 의도적 대비 연출.
-3) “현대 용어가 있다”는 이유만으로 잡지 마라. (특히 내면 독백은 허용)
-4) rewrite는 느낌을 바꾸지 말고   문제 표현만 최소 수정한다.
+🚫 절대 잡지 말 것
+- “JSON에 없으니 오류” (금지)
+- 현실/역사/고증/과학/상식 기반 판단 (금지)
+- 작가 의도/문장 자연스러움 평가 (금지)
+- 디테일 추가(직업 용어, 병명, 배경 설명) 자체를 오류로 만들기 (금지)
 
-출력 규칙:
-- 반드시 JSON만 출력
-- 최상위 키: issues (리스트)
-- 각 항목 필드: type, title, sentence, reason, rewrite, severity
-- reason: 독자 관점에서 왜 혼란인지 1~2문장 (메타 발언 금지)
-- sentence: 원문 그대로 짧게(120자 이내)
-- rewrite: 최소 수정(180자 이내)
-- severity: low|medium|high
+========================
+🧷 issue 생성 조건 (필수)
+========================
+issue는 아래 3개가 모두 있어야 생성한다.
+1) key_path: JSON 경로
+2) json_anchor: JSON에 실제로 적힌 ‘확정/제약’ 문장 그대로
+3) manuscript_sentence: 원고에서 발췌한 문장 그대로
 
-주의:
-- JSON 예시를 그대로 따라쓰지 말고, 필드만 맞춰서 출력해라.
+그리고 conflict는 “앵커를 어떻게 위반했는지”만 1문장으로 말한다.
+외부 사실/고증 언급하면 즉시 삭제.
+
+========================
+📤 출력 (JSON만)
+========================
+{{
+  "issues": [
+    {{
+      "title": "짧은 제목",
+      "sentence": "원고 발췌(필수)",
+      "reason": "key_path: ...\\njson_anchor: ...\\nconflict: ...",
+      "rewrite": "앵커 위반만 제거한 최소 수정 문장(필수)",
+      "severity": "low|medium|high"
+    }}
+  ]
+}}
+
+issues 없으면 {{ "issues": [] }} 만 출력.
 """),
-        ("human", """[세계관 설정]
+        ("human", """[world_json]
 {world}
 
-[원고]
+[manuscript]
 {full_text}
 """),
     ])
@@ -100,8 +126,8 @@ def check_world_consistency(
             type="world",
             title="세계관 룰 검사 실패",
             sentence=None,
-            reason="규칙 엔진이 동작하지 않아 수정사항을 생성할 수 없습니다.",
-            rewrite=f"LLM 호출/파싱 실패: {repr(e)}",
+            reason="LLM 호출/파싱 실패",
+            rewrite=f"{repr(e)}",
             severity="high",
         )]
 
@@ -114,14 +140,11 @@ def check_world_consistency(
         if not isinstance(it, dict):
             continue
 
-        typ = normalize_issue_type(str(it.get("type", "world")))
-        if typ != "world":
-            typ = "world"
-
-        title = str(it.get("title") or "세계관 수정 필요").strip()
+        title = str(it.get("title") or "세계관 앵커 충돌").strip()
 
         sentence = it.get("sentence")
-        sentence = sentence.strip() if isinstance(sentence, str) and sentence.strip() else None
+        sentence = sentence if isinstance(sentence, str) else ""
+        sentence = sentence.strip() or None
 
         reason = str(it.get("reason") or "").strip()
         rewrite = str(it.get("rewrite") or "").strip()
@@ -130,11 +153,11 @@ def check_world_consistency(
         if severity not in ("low", "medium", "high"):
             severity = "medium"
 
-        if not reason or not rewrite:
+        if not sentence or not reason or not rewrite:
             continue
 
         out.append(Issue(
-            type=typ,
+            type="world",
             title=title,
             sentence=sentence,
             reason=reason,
