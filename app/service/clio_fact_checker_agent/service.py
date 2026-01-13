@@ -92,11 +92,87 @@ class ManuscriptAnalyzer:
                     start_from=0
                 )
 
+                # 검증 로직 시작
+                def _is_content_equal(text1, text2):
+                    """특수문자/공백 제거 후 내용 일치 여부 확인"""
+                    def normalize(s):
+                        return re.sub(r'[\s\W_]+', '', s)
+                    return normalize(text1) == normalize(text2)
+
+                def _retry_extract_sentence(chunk_text, keyword):
+                    """
+                    [LLM 재요청] 특정 키워드에 대해 문장 추출만 다시 수행
+                    """
+                    prompt = f"""
+                    당신은 텍스트 분석가입니다.
+                    아래 텍스트에서 키워드 '{keyword}'가 포함된 문장을 **토씨 하나 틀리지 말고 그대로** 추출하세요.
+
+                    [규칙]
+                    1. 문장이 너무 길면, 키워드 주변 10어절만 잘라서 가져오세요.
+                    2. 설명이나 수식어를 붙이지 말고 오직 **본문 내용만** 출력하세요.
+                    3. 없으면 'None'이라고만 출력하세요.
+                    """
+
+                    try:
+                        response = self.llm.invoke([
+                            SystemMessage(content=prompt),
+                            HumanMessage(content=f"Text: {chunk_text[:3000]}") # 문맥 제공
+                        ])
+                        result = response.content.strip().strip('"\'')
+
+                        if result == "None" or len(result) < 2:
+                            return None
+                        return result
+
+                    except Exception as e:
+                        print(f"⚠️ 재시도 중 에러: {e}")
+                        return None
+
+                is_match_success = False
+
+                if start_idx != -1:
+                    actual_found_text = text[start_idx:end_idx]
+
+                    # 1. 완벽 일치하는지 확인
+                    if actual_found_text == origin_snippet:
+                        is_match_success = True
+                    else:
+                        # 2. [불일치 발생] -> 정규화(Normalization) 후 재비교
+                        # 공백, 줄바꿈, 특수문자를 다 떼고 비교해서 글자 알맹이가 같은지 확인
+                        if _is_content_equal(actual_found_text, origin_snippet):
+                            print(f"   ⚠️ [보정 성공] 문장은 다르지만 내용은 같습니다.")
+                            print(f"       LLM: {repr(origin_snippet)}")
+                            print(f"       Raw: {repr(actual_found_text)}")
+                            is_match_success = True
+                        else:
+                            print(f"   ❌ [불일치] 위치는 찾았으나 내용이 너무 다릅니다.")
+                            # 여기서 재시도 로직을 수행하거나, 그냥 이 위치를 신뢰할지 결정
+                            # 보통 _find_exact_position이 3단계(유사도)까지 갔다면,
+                            # 실제로는 맞는 위치일 확률이 높음.
+
+                # 3. [재시도 로직] 위치를 아예 못 찾았거나, 찾았는데 내용이 영 딴판인 경우
+                if start_idx == -1 or (start_idx != -1 and not is_match_success):
+                    print(f"   🔄 [재시도] '{kw}'에 대한 문장 추출을 다시 시도합니다...")
+
+                    # LLM에게 해당 키워드로 다시 문장을 뽑아달라고 요청 (Retry 함수 호출)
+                    new_snippet = _retry_extract_sentence(chunk, kw)
+
+                    if new_snippet:
+                        print(f"      -> 재추출된 문장: {new_snippet}")
+                        # 다시 위치 찾기 시도
+                        start_idx, end_idx = self._find_exact_position(text, new_snippet, 0)
+
+                        if start_idx != -1:
+                            print(f"      ✅ 재시도 성공! 위치 찾음.")
+                            item['original_sentence'] = new_snippet # 업데이트
+
+
                 if start_idx != -1:
                     actual_found_text = text[start_idx:end_idx]
 
                     print(f"   📍 위치 발견: {start_idx} ~ {end_idx} (Keyword: {kw})")
                     print(f"      👉 [검증] 실제 추출된 문장: \"{actual_found_text}\"")
+
                     item['start_index'] = start_idx
                     item['end_index'] = end_idx
                 else:
