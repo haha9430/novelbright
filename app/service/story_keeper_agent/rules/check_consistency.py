@@ -25,7 +25,6 @@ class Issue:
         t = self.type if self.type in TYPE_LABELS else "plot"
         return {
             "type": t,
-            "label": TYPE_LABELS[t],
             "title": self.title,
             "sentence": self.sentence,
             "reason": self.reason,
@@ -50,6 +49,34 @@ def _max_severity(a: str, b: str) -> str:
 
 def _is_failure_issue(i: Issue) -> bool:
     return isinstance(i.title, str) and ("검사 실패" in i.title)
+
+
+def _looks_like_non_conflict(reason: str, title: str) -> bool:
+    """
+    '없어서 오류', '연결성 부재', '배타적이지 않음' 같은 쓸데없는 태클을 걸러낸다.
+    LLM이 가끔 이런 식으로 말장난하는 걸 방지.
+    """
+    r = (reason or "").lower()
+    t = (title or "").lower()
+
+    bad_phrases = [
+        "anchors에 없는",
+        "앵커에 없는",
+        "연결성",
+        "부재",
+        "고려할 때",
+        "배타적이지",
+        "직접적 연결",
+        "새로운 설정",
+        "추가 설정",
+        "설정 추가",
+        "명시되어 있으나",
+        "명시되어 있지만",
+        "추론",
+        "가능성",
+    ]
+
+    return any(p in r for p in bad_phrases) or any(p in t for p in ["연결성", "추론"])
 
 
 def _merge_same_sentence(issues: List[Issue]) -> List[Issue]:
@@ -125,6 +152,7 @@ def check_consistency(
 
     alive: List[Issue] = []
     for i in issues:
+        # 실패 이슈는 남김
         if _is_failure_issue(i):
             if not i.sentence:
                 i.sentence = "(원고 전체)"
@@ -133,10 +161,14 @@ def check_consistency(
             alive.append(i)
             continue
 
-        if not i.sentence:
+        # 정상 이슈 최소 요건
+        if not i.sentence or not i.reason:
             continue
-        if not i.reason:
+
+        # ✅ 쓸데없는 태클 제거
+        if _looks_like_non_conflict(i.reason, i.title):
             continue
+
         alive.append(i)
 
     merged = _merge_same_sentence(alive)

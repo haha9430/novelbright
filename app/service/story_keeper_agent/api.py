@@ -17,11 +17,6 @@ from app.service.story_keeper_agent.ingest_episode.chunking import split_into_ch
 from app.service.story_keeper_agent.load_state.extracter import PlotManager
 
 from app.service.story_keeper_agent.rules.check_consistency import check_consistency
-
-from app.service.story_keeper_agent.rules.world_rules import check_world_consistency
-from app.service.story_keeper_agent.rules.character_rules import check_character_consistency
-from app.service.story_keeper_agent.rules.plot_rules import check_plot_consistency
-
 from app.service.characters import upsert_character
 
 router = APIRouter(prefix="/story", tags=["story-keeper"])
@@ -162,7 +157,7 @@ def character_setting(name: str = Form(...), text: str = Form(...)):
 def manuscript_feedback(
     episode_no: int,
     text: str = Body(..., media_type="text/plain"),
-    debug_raw: bool = Query(False, description="룰별 raw 이슈를 debug에 포함할지"),
+    debug_raw: bool = Query(False, description="디버그 정보를 포함할지"),
 ):
     try:
         full_text_str = text or ""
@@ -186,10 +181,6 @@ def manuscript_feedback(
         else:
             episode_facts = {"raw_text": full_text_str}
 
-        raw_world = check_world_consistency(episode_facts, plot_config)
-        raw_char = check_character_consistency(episode_facts, character_config, story_state)
-        raw_plot = check_plot_consistency(episode_facts, plot_config, story_state)
-
         issues = check_consistency(
             episode_facts=episode_facts,
             character_config=character_config,
@@ -197,43 +188,29 @@ def manuscript_feedback(
             story_state=story_state,
         )
 
-        edits = []
-
-        issues_count = len(issues) if isinstance(issues, list) else 0
-
-        debug_block = {
-            "issues_count": issues_count,
-            "edits_count": 0,
-            "full_text_len": len(full_text_str),
-            "plot_loaded": bool(plot_config),
-            "world_loaded": bool(world),
-            "history_loaded": bool(history),
-            "character_count": len(character_config.get("characters", [])) if isinstance(character_config, dict) else 0,
-            "raw_counts": {
-                "world": len(raw_world) if isinstance(raw_world, list) else -1,
-                "character": len(raw_char) if isinstance(raw_char, list) else -1,
-                "plot": len(raw_plot) if isinstance(raw_plot, list) else -1,
-            },
-            "raw_fail_flags": {
-                "world_failed": any(getattr(x, "title", "").endswith("실패") for x in raw_world) if isinstance(raw_world, list) else True,
-                "character_failed": any(getattr(x, "title", "").endswith("실패") for x in raw_char) if isinstance(raw_char, list) else True,
-                "plot_failed": any(getattr(x, "title", "").endswith("실패") for x in raw_plot) if isinstance(raw_plot, list) else True,
-            },
-        }
-
-        if debug_raw:
-            debug_block["raw_samples"] = {
-                "world": [x.to_dict() for x in raw_world[:5]] if isinstance(raw_world, list) else [],
-                "character": [x.to_dict() for x in raw_char[:5]] if isinstance(raw_char, list) else [],
-                "plot": [x.to_dict() for x in raw_plot[:5]] if isinstance(raw_plot, list) else [],
+        if not issues:
+            base = {
+                "episode_no": episode_no,
+                "message": "수정할 사안이 없습니다!",
+                "issues": [],
+            }
+        else:
+            base = {
+                "episode_no": episode_no,
+                "issues": issues,
             }
 
-        return {
-            "episode_no": episode_no,
-            "issues": issues,
-            "edits": edits,
-            "debug": debug_block,
-        }
+        if debug_raw:
+            base["debug"] = {
+                "full_text_len": len(full_text_str),
+                "plot_loaded": bool(plot_config),
+                "world_loaded": bool(world),
+                "history_loaded": bool(history),
+                "character_count": len(character_config.get("characters", [])) if isinstance(character_config, dict) else 0,
+                "issues_count": len(issues) if isinstance(issues, list) else 0,
+            }
+
+        return base
 
     except ValidationError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
