@@ -16,6 +16,15 @@ router = APIRouter(prefix="/history", tags=["History Manager"])
 
 HISTORY_DB_PATH = "app/data/history_db.json" # 경로 확인 필요
 
+from pydantic import BaseModel
+
+class HistoryRewriteRequest(BaseModel):
+    entity_ids: List[str]  # 삭제할 기존 ID 목록
+    text: str              # 새로 분석하여 넣을 텍스트
+
+class DeleteRequest(BaseModel):
+    entity_ids: List[str]
+
 # ---------------------------------------------------------
 # Helper Functions (내부 함수)
 # ---------------------------------------------------------
@@ -75,25 +84,170 @@ def api_get_history_entity(entity_id: str):
         raise HTTPException(status_code=404, detail=f"Entity not found: {entity_id}")
     return entity
 
-@router.patch("/{entity_id}", response_model=HistoryOut, tags=["History"])
-def api_update_history_entity(entity_id: str, payload: HistoryUpdate):
-    """엔티티 수정 (부분 업데이트)"""
-    try:
-        # 값이 있는 필드만 추출 (exclude_unset=True)
-        update_data = payload.model_dump(exclude_unset=True)
-        return history_repo.update_entity(HISTORY_DB_PATH, entity_id, update_data)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Entity not found: {entity_id}")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+@router.post("/rewrite", tags=["History"])
+def api_update_history_entity(payload: HistoryRewriteRequest):
+    """
+    [일괄 재작성] 지정된 엔티티들을 삭제하고, 입력된 텍스트를 분석하여 새로 생성합니다.
+    - 단계 1: entity_ids에 있는 항목 제거
+    - 단계 2: text를 LLM으로 분석하여 Ingest (Create/Update/Delete 수행)
+    - 단계 3: 벡터 DB 일괄 동기화 (마지막에 1회)
+    """
+    target_ids = payload.entity_ids
+    input_text = payload.text
 
-@router.delete("/{entity_id}", tags=["History"])
-def api_delete_history_entity(entity_id: str):
+    print(f"🔄 [API/Rewrite] 재작성 요청: 삭제 {len(target_ids)}건, 분석 텍스트 {len(input_text)}자")
+
+    results = []
+    success_count = 0
+
+    # ---------------------------------------------------------
+    # 1. [DELETE] 기존 엔티티 일괄 삭제
+    # ---------------------------------------------------------
+    for ent_id in target_ids:
+        try:
+            # auto_sync=False: 속도를 위해 벡터 동기화는 나중에 한 번에 함
+            history_repo.delete_entity(HISTORY_DB_PATH, ent_id, auto_sync=False)
+            print(f"   🗑️ 삭제 완료: {ent_id}")
+            results.append({
+                "action": "pre_delete",
+                "id": ent_id,
+                "status": "success",
+                "message": "재작성 전 삭제됨"
+            })
+        except Exception as e:
+            # 이미 없는 경우 등 에러가 나도, 재생성 로직은 계속 진행해야 함
+            print(f"   ⚠️ 삭제 중 오류 (무시함): {ent_id} - {e}")
+
+    # ---------------------------------------------------------
+    # 2. [INGEST] 텍스트 분석 및 반영 (기존 ingest 로직 재사용)
+    # ---------------------------------------------------------
+    client = HistoryLLMClient()
+    try:
+        commands = client.parse_history_command(input_text)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM analysis failed: {str(e)}")
+
+    if commands:
+        for cmd in commands:
+            suggested_action = cmd.get("action", "create")
+            target_name = cmd.get("target", {}).get("name")
+
+            # DB에서 이름으로 ID 검색
+            existing_id = history_repo.find_id_by_name(HISTORY_DB_PATH, target_name)
+
+            final_action = suggested_action
+            final_target_id = existing_id
+
+            # Ingest 특유의 Upsert 로직 (Create인데 이미 있으면 Update로 변경)
+            if suggested_action == "create" and existing_id:
+                final_action = "update"
+
+            log_item = {"name": target_name, "action": final_action, "status": "pending"}
+
+            try:
+                raw_payload = cmd.get("payload", {})
+                normalized_payload = _normalize_ingest_payload(raw_payload)
+
+                if final_action == "create":
+                    # auto_sync=False 유지
+                    saved_entity = history_repo.create_entity(HISTORY_DB_PATH, normalized_payload, auto_sync=False)
+
+                    log_item.update({
+                        "status": "success",
+                        "id": saved_entity["id"],
+                        "message": "새로 생성됨",
+                        "result_data": saved_entity
+                    })
+                    success_count += 1
+
+                elif final_action == "update":
+                    if not final_target_id:
+                        # 혹시 모를 예외 처리 (Update인데 ID가 없는 경우)
+                        raise ValueError(f"업데이트 대상 ID 없음: {target_name}")
+
+                    existing_entity = history_repo.get_entity(HISTORY_DB_PATH, final_target_id)
+                    merged_data = _merge_entity_data(existing_entity, normalized_payload)
+
+                    updated_entity = history_repo.update_entity(HISTORY_DB_PATH, final_target_id, merged_data, auto_sync=False)
+
+                    log_item.update({
+                        "status": "success",
+                        "id": updated_entity["id"],
+                        "message": "기존 정보에 병합됨",
+                        "result_data": updated_entity
+                    })
+                    success_count += 1
+
+                elif final_action == "delete":
+                    if final_target_id:
+                        history_repo.delete_entity(HISTORY_DB_PATH, final_target_id, auto_sync=False)
+                        log_item.update({"status": "success", "id": final_target_id, "message": "분석 결과에 따라 삭제됨"})
+                        success_count += 1
+
+            except Exception as e:
+                log_item.update({"status": "error", "message": str(e)})
+                print(f"⚠️ Ingest 처리 실패 ({target_name}): {e}")
+
+            results.append(log_item)
+
+    # ---------------------------------------------------------
+    # 3. [SYNC] 벡터 DB 일괄 동기화
+    # ---------------------------------------------------------
+    # 삭제된 항목과 새로 생성된 항목을 모두 반영하기 위해 Force Sync 수행
+    print("🔄 [API/Rewrite] 모든 변경사항 벡터 DB 동기화 중...")
+    try:
+        history_repo.force_sync_vector_db(HISTORY_DB_PATH)
+    except Exception as e:
+        print(f"⚠️ 벡터 DB 동기화 실패: {e}")
+        # 벡터 동기화 실패는 전체 실패로 간주하지 않고 결과 반환 (필요시 수정)
+
+    return {
+        "status": "success",
+        "message": f"재작성 완료 (삭제 요청 {len(target_ids)}건, 신규 처리 {success_count}건)",
+        "details": results
+    }
+
+@router.post("/delete", tags=["History"])
+def api_delete_history_entity(payload: DeleteRequest):
     """엔티티 삭제"""
-    success = history_repo.delete_entity(HISTORY_DB_PATH, entity_id)
-    if not success:
-        raise HTTPException(status_code=404, detail=f"Entity not found: {entity_id}")
-    return {"status": "deleted", "id": entity_id}
+    target_ids = payload.entity_ids
+    print(target_ids)
+
+    print(f"🔄 [API/Rewrite] 삭제 요청: 삭제 {len(target_ids)}건")
+
+    results = []
+
+    # ---------------------------------------------------------
+    # 1. [DELETE] 기존 엔티티 일괄 삭제
+    # ---------------------------------------------------------
+    for ent_id in target_ids:
+        try:
+            # auto_sync=False: 속도를 위해 벡터 동기화는 나중에 한 번에 함
+            history_repo.delete_entity(HISTORY_DB_PATH, ent_id, auto_sync=False)
+            print(f"   🗑️ 삭제 완료: {ent_id}")
+            results.append({
+                "action": "pre_delete",
+                "id": ent_id,
+                "status": "success",
+                "message": "삭제됨"
+            })
+        except Exception as e:
+            # 이미 없는 경우 등 에러가 나도, 재생성 로직은 계속 진행해야 함
+            print(f"   ⚠️ 삭제 중 오류 (무시함): {ent_id} - {e}")
+
+    # 삭제된 항목과 새로 생성된 항목을 모두 반영하기 위해 Force Sync 수행
+    print("🔄 [API/Rewrite] 모든 변경사항 벡터 DB 동기화 중...")
+    try:
+        history_repo.force_sync_vector_db(HISTORY_DB_PATH)
+    except Exception as e:
+        print(f"⚠️ 벡터 DB 동기화 실패: {e}")
+        # 벡터 동기화 실패는 전체 실패로 간주하지 않고 결과 반환 (필요시 수정)
+
+    return {
+        "status": "success",
+        "message": f"삭제 완료 (삭제 요청 {len(target_ids)}건)",
+        "details": results
+    }
 
 @router.post("/ingest", tags=["History"])
 def api_ingest_history_text(payload: IngestRequest):

@@ -1,41 +1,9 @@
 {
   "meta": {
     "version": 1,
-    "updated_at": "2026-01-13T15:37:14+09:00"
+    "updated_at": "2026-01-13T16:58:57+09:00"
   },
   "entities": [
-    {
-      "id": "hist_0002",
-      "name": "훈민정음",
-      "entity_type": "Artifact",
-      "era": "1443-1446",
-      "summary": "1443년 창제, 1446년 반포된 조선의 고유 문자 체계",
-      "description": "세종대왕이 창제한 조선의 고유 문자로 '백성을 가르치는 바른 소리'라는 의미를 지님. 한글 창제의 기반이 된 문자 체계",
-      "tags": [
-        "조선",
-        "문자",
-        "세종대왕",
-        "한글",
-        "문화유산"
-      ],
-      "sources": [],
-      "related_entities": [
-        {
-          "relation_type": "창제자",
-          "target_id": null,
-          "target_name": "세종대왕",
-          "description": "훈민정음 창제를 주도한 조선의 제4대 왕"
-        },
-        {
-          "relation_type": "후속 발전형",
-          "target_id": null,
-          "target_name": "한글",
-          "description": "훈민정음이 현대 한글로 계승 발전됨"
-        }
-      ],
-      "created_at": "2026-01-11T16:27:36+09:00",
-      "updated_at": "2026-01-11T16:27:36+09:00"
-    },
     {
       "id": "hist_0005",
       "name": "훈민정음",
@@ -67,101 +35,6 @@
       ],
       "created_at": "2026-01-11T18:57:59+09:00",
       "updated_at": "2026-01-11T18:57:59+09:00"
-    },
-    {
-      "id": "hist_0006",
-      "name": "홍릉 및 유릉",
-      "entity_type": "Location",
-      "era": "1897년(광무 원년) 이후",
-      "summary": "대한제국 황제 고종과 명성황후, 순종과 두 황후의 무덤으로 조선왕릉과 명 효릉 제도를 결합한 독특한 형식의 황릉",
-      "description": "홍릉은 대한제국 제1대 황제 고종과 명성황후의 합장릉이며, 유릉은 순종과 두 황후의 동봉삼실릉이다. 기존 조선왕릉과 달리 명나라 효릉 제도를 참조해 병풍석·침전·다양한 석물(석인·기린·코끼리 등)을 배치했으며, 두 릉을 담장과 연못으로 연결한 것이 특징이다. 명성황후는 을미사변 때 일본인에 의해 피살된 비운의 인물로, 청량리에서 홍릉으로 이장되었다.",
-      "tags": [
-        "대한제국",
-        "황릉",
-        "조선왕릉",
-        "명나라 효릉",
-        "풍수지리",
-        "을미사변"
-      ],
-      "sources": [],
-      "related_entities": [
-        {
-          "relation_type": "주인공",
-          "target_id": null,
-          "target_name": "고종",
-          "description": "대한제국 제1대 황제, 홍릉의 주인공"
-        },
-        {
-          "relation_type": "주인공",
-          "target_id": null,
-          "target_name": "명성황후",
-          "description": "고종의 비, 을미사변 희생자, 홍릉 합장"
-        },
-        {
-          "relation_type": "주인공",
-          "target_id": null,
-          "target_name": "순종",
-          "description": "대한제국 제2대 황제, 유릉의 주인공"
-        },
-        {
-          "relation_type": "관련 사건",
-          "target_id": null,
-          "target_name": "을미사변",
-          "description": "명성황후 피살 사건"
-        },
-        {
-          "relation_type": "참조 대상",
-          "target_id": null,
-          "target_name": "명나라 효릉",
-          "description": "홍릉·유릉 제도 참조 모델"
-        }
-      ],
-      "created_at": "2026-01-12T10:02:25+09:00",
-      "updated_at": "2026-01-12T10:02:25+09:00"
-    },
-    {
-      "id": "hist_0007",
-      "name": "홍릉과 유릉",
-      "entity_type": "Location",
-      "era": "1897년(광무 원년) 이후",
-      "summary": "대한제국 황제 고종과 명성황후, 순종과 두 황후의 무덤으로 조선왕릉과 명 효릉 제도를 결합한 독특한 형식의 황릉",
-      "description": "홍릉은 고종과 명성황후의 합장릉으로, 대한제국 수립 후 명나라 태조 효릉과 조선왕릉 제도를 혼합해 병풍석·침전·다양한 석물 등을 배치한 황제식 능묘. 유릉은 순종과 두 황후의 동봉삼실릉으로 조선왕릉 중 유일한 3실 구조. 두 능은 담장과 석조 연못으로 연결되며, 기존 왕릉과 달리 규모·형식에서 황제국의 위엄을 반영함.",
-      "tags": [
-        "대한제국",
-        "황릉",
-        "조선왕릉",
-        "명나라 효릉",
-        "풍수지리"
-      ],
-      "sources": [],
-      "related_entities": [
-        {
-          "relation_type": "건설자",
-          "target_id": null,
-          "target_name": "고종",
-          "description": "홍릉의 주인공이자 대한제국 초대 황제"
-        },
-        {
-          "relation_type": "매장자",
-          "target_id": null,
-          "target_name": "명성황후",
-          "description": "을미사변 희생 후 청량리에서 홍릉으로 이장된 황후"
-        },
-        {
-          "relation_type": "매장자",
-          "target_id": null,
-          "target_name": "순종",
-          "description": "유릉의 주인공이자 대한제국 마지막 황제"
-        },
-        {
-          "relation_type": "참조 모델",
-          "target_id": null,
-          "target_name": "명나라 효릉",
-          "description": "홍릉 설계에 영향을 준 명 태조 능묘"
-        }
-      ],
-      "created_at": "2026-01-12T10:04:15+09:00",
-      "updated_at": "2026-01-12T10:04:15+09:00"
     },
     {
       "id": "hist_0008",
@@ -206,52 +79,6 @@
       ],
       "created_at": "2026-01-12T10:08:07+09:00",
       "updated_at": "2026-01-12T10:08:07+09:00"
-    },
-    {
-      "id": "hist_0009",
-      "name": "홍릉과 유릉의 역사적 기록",
-      "entity_type": "Artifact",
-      "era": "1897년(광무 원년) ~ 20세기 초",
-      "summary": "대한제국기 황제와 황후의 무덤인 홍릉과 유릉의 구조 및 역사적 배경",
-      "description": "홍릉은 고종과 명성황후의 합장 무덤으로, 대한제국 수립 후 명나라 효릉과 조선왕릉 제도를 결합한 독특한 양식을 채택하였다. 유릉은 순종과 두 황후의 무덤으로, 조선왕릉 중 유일하게 한 봉우리에 3개의 방을 가진 동봉삼실릉이다. 두 릉은 황제릉의 위엄을 강조하기 위해 석물의 규모와 배치가 기존 왕릉과 차별화되었다. 추가로 주먹도끼에 대한 구석기 시대 유물 설명도 포함되어 있다.",
-      "tags": [
-        "대한제국",
-        "왕릉",
-        "명성황후",
-        "고종",
-        "순종",
-        "석물",
-        "구석기 유물"
-      ],
-      "sources": [],
-      "related_entities": [
-        {
-          "relation_type": "관련 인물",
-          "target_id": null,
-          "target_name": "고종",
-          "description": "대한제국 제1대 황제, 홍릉의 주인공"
-        },
-        {
-          "relation_type": "관련 인물",
-          "target_id": null,
-          "target_name": "명성황후",
-          "description": "고종의 부인, 을미사변 희생자, 홍릉 합장자"
-        },
-        {
-          "relation_type": "관련 인물",
-          "target_id": null,
-          "target_name": "순종",
-          "description": "대한제국 마지막 황제, 유릉의 주인공"
-        },
-        {
-          "relation_type": "관련 유물",
-          "target_id": null,
-          "target_name": "주먹도끼",
-          "description": "구석기 시대 석기, 동아시아 독자적 분류 필요"
-        }
-      ],
-      "created_at": "2026-01-12T10:09:25+09:00",
-      "updated_at": "2026-01-12T10:09:25+09:00"
     },
     {
       "id": "hist_0010",
@@ -303,102 +130,7 @@
         }
       ],
       "created_at": "2026-01-12T10:22:45+09:00",
-      "updated_at": "2026-01-12T13:31:21+09:00"
-    },
-    {
-      "id": "hist_0011",
-      "name": "고종",
-      "entity_type": "Person",
-      "era": "대한제국",
-      "summary": "대한제국 초대 황제",
-      "description": "임오군란, 갑신정변, 을미사변 등을 겪은 대한제국의 초대 황제. 홍릉의 주인공.",
-      "tags": [
-        "을미사변",
-        "대한제국",
-        "갑신정변",
-        "군주",
-        "정치인",
-        "역사 인물",
-        "임오군란",
-        "황제",
-        "조선 왕실"
-      ],
-      "sources": [],
-      "related_entities": [
-        {
-          "relation_type": "Participant",
-          "target_id": null,
-          "target_name": "임오군란",
-          "description": "재위 기간 중 발생한 사건"
-        },
-        {
-          "relation_type": "Participant",
-          "target_id": null,
-          "target_name": "갑신정변",
-          "description": "재위 기간 중 발생한 사건"
-        },
-        {
-          "relation_type": "Participant",
-          "target_id": null,
-          "target_name": "을미사변",
-          "description": "명성황후가 살해당한 사건"
-        },
-        {
-          "relation_type": "Participant",
-          "target_id": null,
-          "target_name": "홍릉",
-          "description": "고종의 무덤"
-        },
-        {
-          "relation_type": "Enemy",
-          "target_id": null,
-          "target_name": "일본인",
-          "description": "명성황후 살해 사건의 가해자 집단"
-        }
-      ],
-      "created_at": "2026-01-12T10:22:46+09:00",
-      "updated_at": "2026-01-12T13:31:21+09:00"
-    },
-    {
-      "id": "hist_0012",
-      "name": "명성황후",
-      "entity_type": "Person",
-      "era": "조선 말기",
-      "summary": "고종의 비이자 대한제국 추존 황후",
-      "description": "을미사변 때 일본인에 의해 살해된 비운의 왕비. 청량리에 안장되었다가 홍릉에 합장됨.",
-      "tags": [
-        "을미사변",
-        "대한제국",
-        "비극적 사건",
-        "역사적 인물",
-        "홍릉",
-        "왕비",
-        "역사 인물",
-        "비운"
-      ],
-      "sources": [],
-      "related_entities": [
-        {
-          "relation_type": "Victim",
-          "target_id": null,
-          "target_name": "을미사변",
-          "description": "사건 희생자"
-        },
-        {
-          "relation_type": "Participant",
-          "target_id": null,
-          "target_name": "홍릉",
-          "description": "명성황후의 합장릉"
-        },
-        {
-          "relation_type": "Enemy",
-          "target_id": null,
-          "target_name": "일본인",
-          "description": "명성황후 살해 관련"
-        }
-      ],
-      "created_at": "2026-01-12T10:22:48+09:00",
-      "updated_at": "2026-01-12T13:31:21+09:00"
+      "updated_at": "2026-01-13T16:36:27+09:00"
     },
     {
       "id": "hist_0013",
@@ -431,7 +163,7 @@
         }
       ],
       "created_at": "2026-01-12T10:22:49+09:00",
-      "updated_at": "2026-01-12T13:31:21+09:00"
+      "updated_at": "2026-01-13T16:36:27+09:00"
     },
     {
       "id": "hist_0014",
@@ -457,7 +189,7 @@
         }
       ],
       "created_at": "2026-01-12T10:22:51+09:00",
-      "updated_at": "2026-01-12T13:31:21+09:00"
+      "updated_at": "2026-01-13T16:36:27+09:00"
     },
     {
       "id": "hist_0015",
@@ -486,7 +218,7 @@
         }
       ],
       "created_at": "2026-01-12T10:22:53+09:00",
-      "updated_at": "2026-01-12T13:31:21+09:00"
+      "updated_at": "2026-01-13T16:36:27+09:00"
     },
     {
       "id": "hist_0016",
@@ -515,7 +247,7 @@
         }
       ],
       "created_at": "2026-01-12T10:22:55+09:00",
-      "updated_at": "2026-01-12T13:31:21+09:00"
+      "updated_at": "2026-01-13T16:36:27+09:00"
     },
     {
       "id": "hist_0017",
@@ -558,7 +290,7 @@
         }
       ],
       "created_at": "2026-01-12T10:23:02+09:00",
-      "updated_at": "2026-01-12T13:31:21+09:00"
+      "updated_at": "2026-01-13T16:36:27+09:00"
     },
     {
       "id": "hist_0018",
@@ -582,7 +314,7 @@
         }
       ],
       "created_at": "2026-01-12T10:23:05+09:00",
-      "updated_at": "2026-01-12T13:31:21+09:00"
+      "updated_at": "2026-01-13T16:36:27+09:00"
     },
     {
       "id": "hist_0019",
@@ -606,7 +338,7 @@
         }
       ],
       "created_at": "2026-01-12T10:23:08+09:00",
-      "updated_at": "2026-01-12T13:31:21+09:00"
+      "updated_at": "2026-01-13T16:36:27+09:00"
     },
     {
       "id": "hist_0020",
@@ -738,7 +470,7 @@
         }
       ],
       "created_at": "2026-01-12T10:35:52+09:00",
-      "updated_at": "2026-01-12T10:35:52+09:00"
+      "updated_at": "2026-01-13T16:36:27+09:00"
     },
     {
       "id": "hist_0024",
@@ -763,7 +495,7 @@
         }
       ],
       "created_at": "2026-01-12T10:35:54+09:00",
-      "updated_at": "2026-01-12T10:35:54+09:00"
+      "updated_at": "2026-01-13T16:36:27+09:00"
     },
     {
       "id": "hist_0025",
@@ -1338,7 +1070,7 @@
         }
       ],
       "created_at": "2026-01-12T14:03:11+09:00",
-      "updated_at": "2026-01-13T15:37:14+09:00"
+      "updated_at": "2026-01-13T16:54:47+09:00"
     },
     {
       "id": "hist_0049",
@@ -1363,7 +1095,7 @@
         }
       ],
       "created_at": "2026-01-12T14:03:11+09:00",
-      "updated_at": "2026-01-13T15:37:14+09:00"
+      "updated_at": "2026-01-13T16:54:47+09:00"
     },
     {
       "id": "hist_0050",
@@ -1387,7 +1119,7 @@
         }
       ],
       "created_at": "2026-01-12T14:03:12+09:00",
-      "updated_at": "2026-01-13T15:37:14+09:00"
+      "updated_at": "2026-01-13T16:54:47+09:00"
     },
     {
       "id": "hist_0051",
