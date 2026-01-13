@@ -152,7 +152,7 @@ def ingest_plain(
         # 7) facts 추출
         episode_facts = manager.extract_facts(episode_no, full_text_str, story_state)
 
-        # ✅ 핵심: rules에서 원고를 읽을 수 있도록 raw_text 강제 주입
+        # ✅ rules에서 원고를 읽을 수 있도록 raw_text 강제 주입
         if isinstance(episode_facts, dict):
             episode_facts["raw_text"] = full_text_str
         else:
@@ -169,10 +169,13 @@ def ingest_plain(
             story_state=story_state,
         )
 
-        # 10) issues → edits
-        edits = issues_to_edits(issues)
+        # 10) issues → edits (✅ 위치: 몇화-몇번째 줄 생성)
+        edits = issues_to_edits(
+            issues,
+            episode_no=episode_no,
+            raw_text=full_text_str,
+        )
 
-        # ✅ 응답은 수정 피드백만
         return {
             "episode_no": episode_no,
             "edits": edits,

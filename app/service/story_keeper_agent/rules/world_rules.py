@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from langchain_upstage import ChatUpstage
 from langchain_core.prompts import ChatPromptTemplate
 
-from .check_consistency import Issue
+from .check_consistency import Issue, normalize_issue_type
 
 load_dotenv()
 
-_CODEBLOCK_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
 def _get_world(story_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -27,27 +27,16 @@ def _get_full_text(episode_facts: Dict[str, Any]) -> str:
     return ""
 
 
-def _strip_codeblock(text: str) -> str:
-    """LLM이 ```json ...``` 로 감싸도 JSON만 뽑아내기"""
+def _extract_json(text: str) -> Optional[Dict[str, Any]]:
     if not isinstance(text, str):
-        return ""
-    m = _CODEBLOCK_RE.search(text)
-    if m:
-        return m.group(1).strip()
-    return text.strip()
-
-
-def _clip(s: Any, n: int) -> str:
-    t = "" if s is None else str(s)
-    t = " ".join(t.strip().split())
-    return t if len(t) <= n else t[: n - 1] + "…"
-
-
-def _extract_content(raw: Any) -> str:
-    # langchain 반환 타입 대응
-    if isinstance(raw, dict):
-        return raw.get("content") or raw.get("text") or str(raw)
-    return getattr(raw, "content", None) or getattr(raw, "text", None) or str(raw)
+        return None
+    m = _JSON_RE.search(text.strip())
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return None
 
 
 def check_world_consistency(
@@ -57,45 +46,46 @@ def check_world_consistency(
     world = _get_world(story_state)
     full_text = _get_full_text(episode_facts)
 
-    # world 또는 원고가 비면 검사할 근거가 없으니 그대로 종료
     if not full_text.strip() or not world:
         return []
 
-    # 필요하면 temperature=0으로 더 보수적으로
     llm = ChatUpstage(model="solar-pro")
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """당신은 웹소설 세계관 검수자입니다.
+        ("system", """너는 ‘초보 작가를 돕는 웹소설 총괄 편집장’이다.
+
+[판단 우선순위 규칙(최상위)]
+- 이 시스템은 ‘사실관계(역사, 과학, 현실 지식)’보다 ‘세계관 설정’과 ‘등장인물 설정’을 항상 우선한다.
+- 현실과 다르더라도 세계관/캐릭터 설정이 허용하면 오류가 아니다.
 
 목표:
-- [세계관 설정]과 [원고]를 비교하여 '확실한' 세계관 위반/누락만 찾습니다.
-- 설정에 근거가 없는 추측/창작 금지.
-- 근거(evidence)는 원고에서 발췌한 1문장 또는 1구절만(최대 120자).
-- rewrite는 실제로 고칠 문장 1~2문장(최대 240자).
-- reason은 설정의 어떤 키와 충돌하는지 명시(최대 200자).
+- [세계관 설정]과 [원고]를 비교해 독자가 “설정 충돌로 헷갈릴” 지점만 최소한으로 지적한다.
+- 작가의 의도/문체/개성은 기본적으로 정상으로 간주한다.
 
-반드시 아래 JSON만 출력하세요. 코드블록(```), 설명 문장 금지.
+판단 기준(중요):
+1) world(세계관 오류)는 ‘명백한 설정 충돌’ + ‘본문에서 공개적으로 작동’ + ‘그런데도 자연스러운 반응/맥락이 없어 독자가 혼란’일 때만 잡아라.
+2) 다음은 world 오류가 아니다: 주인공의 생각/내면독백/혼잣말, 높은 지식 수준, 현대적 비유/표현, 의도적 대비 연출.
+3) “현대 용어가 있다”는 이유만으로 잡지 마라. (특히 내면 독백은 허용)
+4) rewrite는 느낌을 바꾸지 말고   문제 표현만 최소 수정한다.
 
-[출력 JSON]
-{{
-  "issues": [
-    {{
-      "rule_source": "world",
-      "rule_id": "world_rules.magic_allowed",
-      "severity": "low|medium|high",
-      "evidence": "원고 근거(최대 120자)",
-      "rewrite": "수정 제안(최대 240자)",
-      "reason": "plot.json의 어떤 규칙과 충돌하는지(최대 200자)"
-    }}
-  ]
-}}
+출력 규칙:
+- 반드시 JSON만 출력
+- 최상위 키: issues (리스트)
+- 각 항목 필드: type, title, sentence, reason, rewrite, severity
+- reason: 독자 관점에서 왜 혼란인지 1~2문장 (메타 발언 금지)
+- sentence: 원문 그대로 짧게(120자 이내)
+- rewrite: 최소 수정(180자 이내)
+- severity: low|medium|high
+
+주의:
+- JSON 예시를 그대로 따라쓰지 말고, 필드만 맞춰서 출력해라.
 """),
-        ("human", """[세계관 설정(JSON)]
+        ("human", """[세계관 설정]
 {world}
 
 [원고]
 {full_text}
-""")
+"""),
     ])
 
     try:
@@ -103,29 +93,19 @@ def check_world_consistency(
             "world": json.dumps(world, ensure_ascii=False),
             "full_text": full_text,
         })
-
-        raw_text = _extract_content(raw)
-        json_text = _strip_codeblock(raw_text)
-
-        result = json.loads(json_text)
-        if not isinstance(result, dict):
-            raise ValueError(f"LLM JSON 최상위가 dict가 아님: {type(result)}")
-
+        content = raw.content if hasattr(raw, "content") else str(raw)
+        data = _extract_json(content) or {"issues": []}
     except Exception as e:
-        err = f"LLM 호출/파싱 실패: {repr(e)}"
         return [Issue(
             type="world",
-            severity="high",
             title="세계관 룰 검사 실패",
-            message=err,
-            evidence="(world_rules)",
-            suggestion="",
-            rewrite=err,
+            sentence=None,
             reason="규칙 엔진이 동작하지 않아 수정사항을 생성할 수 없습니다.",
-            location={"hint": "world_rules LLM 호출 실패"},
+            rewrite=f"LLM 호출/파싱 실패: {repr(e)}",
+            severity="high",
         )]
 
-    items = result.get("issues", [])
+    items = data.get("issues", [])
     if not isinstance(items, list):
         return []
 
@@ -134,26 +114,32 @@ def check_world_consistency(
         if not isinstance(it, dict):
             continue
 
-        rule_id = it.get("rule_id") or ""
-        evidence = _clip(it.get("evidence"), 120)
-        rewrite = _clip(it.get("rewrite"), 240)
-        reason = _clip(it.get("reason"), 200)
-        severity = str(it.get("severity", "low"))
+        typ = normalize_issue_type(str(it.get("type", "world")))
+        if typ != "world":
+            typ = "world"
 
-        # “수정 피드백만” 원칙: rewrite/reason 없으면 스킵
-        if not rewrite.strip() or not reason.strip():
+        title = str(it.get("title") or "세계관 수정 필요").strip()
+
+        sentence = it.get("sentence")
+        sentence = sentence.strip() if isinstance(sentence, str) and sentence.strip() else None
+
+        reason = str(it.get("reason") or "").strip()
+        rewrite = str(it.get("rewrite") or "").strip()
+
+        severity = str(it.get("severity") or "medium").strip().lower()
+        if severity not in ("low", "medium", "high"):
+            severity = "medium"
+
+        if not reason or not rewrite:
             continue
 
         out.append(Issue(
-            type="world",
-            severity=severity if severity in ("low", "medium", "high") else "low",
-            title="세계관 수정 필요",
-            message="",
-            evidence=evidence,
-            location={"hint": evidence} if evidence else None,
+            type=typ,
+            title=title,
+            sentence=sentence,
+            reason=reason,
             rewrite=rewrite,
-            reason=f"[{rule_id}] {reason}" if rule_id else reason,
-            suggestion=rewrite,
+            severity=severity,
         ))
 
     return out
