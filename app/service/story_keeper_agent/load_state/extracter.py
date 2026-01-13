@@ -14,6 +14,9 @@ load_dotenv()
 
 class PlotManager:
     def __init__(self):
+        # SSL_CERT_FILE 깨졌을 때만 certifi로 복구
+        self._fix_ssl_cert_env()
+
         self.llm = ChatUpstage(model="solar-pro")
         self.parser = JsonOutputParser()
 
@@ -27,8 +30,30 @@ class PlotManager:
         # 히스토리는 load_state 폴더에 저장
         self.history_file = os.path.join(self.data_dir, "story_history.json")
 
-        print(f"📂 [StoryKeeper] plot.json: {self.global_setting_file}")
-        print(f"📂 [StoryKeeper] story_history.json: {self.history_file}")
+        print(f"📂 plot.json: {self.global_setting_file}")
+        print(f"📂 story_history.json: {self.history_file}")
+
+    def _fix_ssl_cert_env(self) -> None:
+        """
+        Windows에서 SSL_CERT_FILE이 깨져있으면 httpx가 터질 수 있어서 certifi로 교체.
+        """
+        try:
+            import certifi
+
+            cafile = certifi.where()
+            env_path = os.environ.get("SSL_CERT_FILE", "").strip()
+
+            if (not env_path) or (env_path and not os.path.exists(env_path)):
+                os.environ["SSL_CERT_FILE"] = cafile
+
+            if not os.environ.get("REQUESTS_CA_BUNDLE", "").strip():
+                os.environ["REQUESTS_CA_BUNDLE"] = os.environ["SSL_CERT_FILE"]
+            if not os.environ.get("CURL_CA_BUNDLE", "").strip():
+                os.environ["CURL_CA_BUNDLE"] = os.environ["SSL_CERT_FILE"]
+
+        except Exception:
+            # 없어도 서버 안 죽게
+            pass
 
     def _backup_broken_json(self, path: str):
         try:
@@ -37,7 +62,7 @@ class PlotManager:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_path = f"{path}.broken_{ts}.json"
             os.replace(path, backup_path)
-            print(f"⚠️ [StoryKeeper] 깨진 JSON 백업: {backup_path}")
+            print(f"⚠️ 깨진 JSON 백업: {backup_path}")
         except Exception:
             pass
 
@@ -84,9 +109,6 @@ class PlotManager:
 1) summary: 세계관 정리(여러 문장/항목형 가능). 거의 요약하지 말고 정리 느낌으로.
 2) genre: AI가 판단한 장르 1~2개 (예: 대체역사, 의학, 회귀 등)
 3) important_parts: 고증/설정 불일치 방지 위해 반드시 지켜야 할 핵심 포인트 5~10개 (문장 리스트)
-   - 예: 주인공은 21세기에서 19세기로 간 의사다
-   - 예: 시대 배경은 19세기 영국이다
-   - 예: 현대 지식 사용 시 '조선 의학에서 배웠다'고 둘러댄다
 
 [기존 저장된 세계관(있으면 참고)]
 {existing_settings}
@@ -129,6 +151,7 @@ class PlotManager:
 
     # =========================
     # full_text 요약 -> story_history.json 저장
+    # (episode_no, title, summary, story_flow)
     # =========================
     def summarize_and_save(self, episode_no: int, full_text: str) -> Dict[str, Any]:
         if not isinstance(episode_no, int) or episode_no < 1:
@@ -157,9 +180,10 @@ class PlotManager:
 - 오직 '무슨 일이 일어났는지'와 '이 화의 역할'만 작성합니다.
 
 반환은 반드시 JSON만.
-출력 JSON 키는 정확히 아래 2개만 사용:
-1) summary: 이번 화 핵심 사건 요약(3~4문장)
-2) story_flow: 전체 이야기에서 이 화의 역할(1문장)
+출력 JSON 키는 정확히 아래 3개만 사용:
+1) title: 이번 화를 대표하는 회차 제목(짧고 명확하게)
+2) summary: 이번 화 핵심 사건 요약(3~4문장)
+3) story_flow: 전체 이야기에서 이 화의 역할(1문장)
 
 [이전 화 흐름]
 {prev_flow}
@@ -175,6 +199,8 @@ class PlotManager:
                 result = {}
 
             history_data[str(episode_no)] = {
+                "episode_no": episode_no,
+                "title": str(result.get("title", "") or ""),
                 "summary": str(result.get("summary", "") or ""),
                 "story_flow": str(result.get("story_flow", "") or ""),
             }
@@ -258,6 +284,7 @@ class PlotManager:
                 return {"episode_no": episode_no, "events": [], "characters": [], "state_changes": {}}
 
             result.setdefault("episode_no", episode_no)
+
             if not isinstance(result.get("events"), list):
                 result["events"] = []
             if not isinstance(result.get("characters"), list):

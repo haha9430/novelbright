@@ -5,7 +5,7 @@ import json
 
 sys.path.insert(0, os.getcwd())
 
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Form
 from pydantic import ValidationError
 
 from app.service.story_keeper_agent.ingest_episode import (
@@ -18,9 +18,9 @@ from app.service.story_keeper_agent.load_state.extracter import PlotManager
 from app.service.story_keeper_agent.rules.check_consistency import check_consistency
 from app.service.story_keeper_agent.finalize_episode import issues_to_edits
 
-# ✅ story_keeper_main.py가 이 변수를 import해야 하니까 "router" 이름 고정!
-router = APIRouter(prefix="/story", tags=["story-keeper"])
+from app.service.characters import upsert_character
 
+router = APIRouter(prefix="/story", tags=["story-keeper"])
 manager = PlotManager()
 
 
@@ -39,9 +39,6 @@ def _extract_text_from_response(res):
 
 
 def _load_plot_world() -> dict:
-    """
-    plot.json(세계관 설정) 로드: app/data/plot.json 우선, 없으면 PlotManager 경로 사용
-    """
     here = os.getcwd()
     p1 = os.path.join(here, "app", "data", "plot.json")
 
@@ -58,9 +55,6 @@ def _load_plot_world() -> dict:
 
 
 def _load_story_history() -> dict:
-    """
-    story_history.json 로드: load_state 폴더에 저장되는 파일
-    """
     try:
         data = manager._read_json(manager.history_file, default={})
         return data if isinstance(data, dict) else {}
@@ -69,11 +63,6 @@ def _load_story_history() -> dict:
 
 
 def _load_character_config() -> dict:
-    """
-    캐릭터 설정: app/data/characters.json
-    - {"characters":[...]} or {"profiles":{...}} or {"이름":{...}} or [{"name":...}]
-    => {"characters":[...]}로 정규화
-    """
     here = os.getcwd()
     path = os.path.join(here, "app", "data", "characters.json")
     if not os.path.exists(path):
@@ -81,18 +70,6 @@ def _load_character_config() -> dict:
 
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-
-    if isinstance(data, dict) and isinstance(data.get("characters"), list):
-        return {"characters": data["characters"]}
-
-    if isinstance(data, dict) and isinstance(data.get("profiles"), dict):
-        chars = []
-        for name, d in data["profiles"].items():
-            if isinstance(d, dict):
-                x = dict(d)
-                x.setdefault("name", name)
-                chars.append(x)
-        return {"characters": chars}
 
     if isinstance(data, dict):
         chars = []
@@ -104,65 +81,85 @@ def _load_character_config() -> dict:
         return {"characters": chars}
 
     if isinstance(data, list):
-        chars = []
-        for d in data:
-            if isinstance(d, dict) and d.get("name"):
-                chars.append(d)
+        chars = [d for d in data if isinstance(d, dict) and d.get("name")]
         return {"characters": chars}
 
     return {"characters": []}
 
 
-# ✅ 세계관(설정) 업로드/정리: summary + genre + important_parts 저장
-@router.post("/world_setting")
+# =========================
+# 1) World Setting
+# =========================
+@router.post(
+    "/world_setting",
+    summary="World Setting",
+    description="세계관/설정 입력 -> 저장",
+)
 def world_setting(text: str = Body(..., media_type="text/plain")):
     return manager.update_global_settings(text)
 
 
-# ✅ 원고 넣고 피드백 받기
-@router.post("/episode_feedback")
-def episode_feedback(
+# =========================
+# 2) Character Setting (✅ 입력칸 2개로 뜨게)
+# =========================
+@router.post(
+    "/character_setting",
+    summary="Character Setting",
+    description="이름(key) + 특징(설명) 2칸 입력 -> characters.json에 upsert",
+)
+def character_setting(
+    name: str = Form(..., description="캐릭터 이름(키값)"),
+    features: str = Form(..., description="캐릭터 특징/설명(서술/양식 아무거나)"),
+):
+    try:
+        return upsert_character(name, features)
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# =========================
+# 3) Manuscript Feedback
+# =========================
+@router.post(
+    "/manuscript_feedback",
+    summary="Manuscript Feedback",
+    description="원고(회차) 입력 -> 청크 -> 저장/상태 로드 -> 규칙 검사 -> 수정안 반환",
+)
+def manuscript_feedback(
     episode_no: int,
     raw_text: str = Body(..., media_type="text/plain"),
 ):
     try:
-        # 1) 청크 자르기
         chunks = split_into_chunks(raw_text, max_len=2500, min_len=1500)
 
-        # 2) Request 생성(스키마 호환)
         try:
             req = IngestEpisodeRequest(episode_no=episode_no, chunks=chunks)
         except ValidationError:
             req = IngestEpisodeRequest(episode_no=episode_no, text_chunks=chunks)
 
-        # 3) ingest → full_text
         res = ingest_episode(req)
         full_text_str = _extract_text_from_response(res)
 
-        # 4) story_history 저장(요약 중심)
         manager.summarize_and_save(episode_no, full_text_str)
 
-        # 5) story_state 구성: plot.json(world) + story_history
         world = _load_plot_world()
         history = _load_story_history()
         story_state = {"world": world, "history": history}
 
-        # 6) 캐릭터 config
         character_config = _load_character_config()
 
-        # 7) facts 추출
         episode_facts = manager.extract_facts(episode_no, full_text_str, story_state)
 
-        # ✅ rules에서 원고를 읽을 수 있도록 raw_text 강제 주입
         if isinstance(episode_facts, dict):
             episode_facts["raw_text"] = full_text_str
         else:
             episode_facts = {"raw_text": full_text_str}
 
-        # 8) plot_config는 비워두거나(향후 확장)
         plot_config = {}
 
-        # 9) 규칙 체크
         issues = check_consistency(
             episode_facts=episode_facts,
             character_config=character_config,
@@ -170,7 +167,6 @@ def episode_feedback(
             story_state=story_state,
         )
 
-        # 10) issues → edits
         edits = issues_to_edits(
             issues,
             episode_no=episode_no,
@@ -183,10 +179,11 @@ def episode_feedback(
             "debug": {
                 "issue_count": len(edits),
                 "full_text_len": len(full_text_str or ""),
-                "has_raw_text": True,
                 "world_loaded": bool(world),
                 "history_count": len(history) if isinstance(history, dict) else 0,
-                "character_count": len(character_config.get("characters", [])) if isinstance(character_config, dict) else 0,
+                "character_count": len(character_config.get("characters", []))
+                if isinstance(character_config, dict)
+                else 0,
             },
         }
 
