@@ -1,3 +1,4 @@
+# app/service/story_keeper_agent/api.py
 import sys
 import os
 import json
@@ -49,7 +50,6 @@ def _load_plot_world() -> dict:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
 
-    # fallback (기존 manager 경로)
     try:
         world = manager._read_json(manager.global_setting_file, default={})
         return world if isinstance(world, dict) else {}
@@ -113,14 +113,15 @@ def _load_character_config() -> dict:
     return {"characters": []}
 
 
-@router.post("/setting")
-def update_setting(text: str = Body(..., media_type="text/plain")):
-    # plot.json에는 세계관만 저장하도록 PlotManager쪽 로직을 맞춘 상태라고 가정
+# ✅ 세계관(설정) 업로드/정리: summary + genre + important_parts 저장
+@router.post("/world_setting")
+def world_setting(text: str = Body(..., media_type="text/plain")):
     return manager.update_global_settings(text)
 
 
-@router.post("/ingest_plain")
-def ingest_plain(
+# ✅ 원고 넣고 피드백 받기
+@router.post("/episode_feedback")
+def episode_feedback(
     episode_no: int,
     raw_text: str = Body(..., media_type="text/plain"),
 ):
@@ -169,7 +170,7 @@ def ingest_plain(
             story_state=story_state,
         )
 
-        # 10) issues → edits (✅ 위치: 몇화-몇번째 줄 생성)
+        # 10) issues → edits
         edits = issues_to_edits(
             issues,
             episode_no=episode_no,
