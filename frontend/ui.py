@@ -4,6 +4,7 @@ import uuid
 from streamlit_quill import st_quill
 import requests
 import re
+from bs4 import BeautifulSoup
 
 # =========================================================
 # 1. 설정 및 CSS (사용자님 디자인 적용)
@@ -275,66 +276,111 @@ def render_editor():
 
     render_sidebar(proj)
 
-    with st.sidebar:
-        st.divider()
-        if st.button("💾 원고 저장하기", type="primary", use_container_width=True):
-            with st.spinner("저장 중..."):
-                try:
-                    content_val = st.session_state.get(quill_key, current_doc.get('content', ""))
-                    payload = {"doc_id": current_doc['id'], "title": current_doc['title'], "content": content_val}
-                    requests.post("http://127.0.0.1:8000/documents/save", json=payload)
-                    st.toast("저장 완료!", icon="✅")
-                    current_doc['content'] = content_val
-                except Exception as e:
-                    st.error(f"저장 실패: {e}")
+    # ---------------------------------------------------------
+    # [Logic] 글자 수 계산 & 콘텐츠 안전하게 가져오기
+    # ---------------------------------------------------------
+    # 1. 세션 스테이트에서 가져오되, None이면 빈 문자열("")로 변환
+    content_raw = st.session_state.get(quill_key)
+    if content_raw is None:
+        content_source = current_doc.get('content', "")
+    else:
+        content_source = content_raw
 
-    c1, c2 = st.columns([8, 2])
-    with c1:
+    # 2. 글자 수 계산
+    char_count_total = 0
+    char_count_no_space = 0
+
+    if content_source:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(content_source, "html.parser")
+        plain_text = soup.get_text()
+        char_count_total = len(plain_text)
+        char_count_no_space = len(plain_text.replace(" ", "").replace("\n", ""))
+
+    # ---------------------------------------------------------
+    # [UI] 헤더 영역 (제목 | 통계 | 버튼)
+    # ---------------------------------------------------------
+    c_title, c_stats, c_btn = st.columns([6, 2.5, 1.5], gap="small", vertical_alignment="bottom")
+
+    with c_title:
         st.markdown('<div class="doc-title-input">', unsafe_allow_html=True)
         new_t = st.text_input("t", value=current_doc['title'], key=f"t_{current_doc['id']}",
-                              label_visibility="collapsed")
-        if new_t != current_doc['title']: current_doc['title'] = new_t; st.rerun()
+                              label_visibility="collapsed", placeholder="제목 없음")
+        if new_t != current_doc['title']:
+            current_doc['title'] = new_t
+            st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-    with c2:
+
+    # 글자 수 통계
+    with c_stats:
+        st.markdown(
+            f"""
+            <div style="text-align: right; color: #888; font-size: 13px; margin-bottom: 8px;">
+                <span style="font-weight:bold; color:#5D4037;">{char_count_total:,}</span> 자 
+                <span style="font-size:11px; color:#aaa;">(공백제외 {char_count_no_space:,})</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with c_btn:
         lbl = "✖ 닫기" if st.session_state.show_moneta else "✨ Moneta"
         if st.button(lbl, use_container_width=True):
             st.session_state.show_moneta = not st.session_state.show_moneta
             st.rerun()
 
-    # Moneta Analysis
+    # ---------------------------------------------------------
+    # [UI] Moneta 패널 (맞춤법 제거됨)
+    # ---------------------------------------------------------
     if st.session_state.show_moneta:
         with st.container(border=True):
-            if st.button("🚀 전체 스캔 시작", use_container_width=True, type="primary"):
-                st.session_state.analysis_results[current_doc['id']] = []
-                with st.spinner("분석 중..."):
-                    try:
-                        c_val = st.session_state.get(quill_key, "")
-                        res = requests.post("http://127.0.0.1:8000/analyze/text",
-                                            json={"doc_id": current_doc['id'], "content": c_val})
-                        if res.status_code == 200:
-                            st.session_state.analysis_results[current_doc['id']] = res.json()
-                            st.rerun()
-                        else:
-                            st.error(f"서버 에러: {res.text}")
-                    except Exception as e:
-                        st.error(f"서버 연결 실패: {e}")
+            c_info, c_btn = st.columns([7, 3])
+            with c_info:
+                st.caption("역사적 고증과 설정 충돌을 분석합니다.")
+            with c_btn:
+                if st.button("🚀 전체 스캔", use_container_width=True, type="primary"):
+                    st.session_state.analysis_results[current_doc['id']] = []
+                    with st.spinner("분석 중..."):
+                        try:
+                            # 안전하게 처리된 content_source 전송
+                            res = requests.post("http://127.0.0.1:8000/analyze/text",
+                                                json={"doc_id": current_doc['id'], "content": content_source})
+                            if res.status_code == 200:
+                                st.session_state.analysis_results[current_doc['id']] = res.json()
+                                st.rerun()
+                            else:
+                                st.error(f"오류: {res.text}")
+                        except Exception as e:
+                            st.error(f"연결 실패: {e}")
 
+        # 분석 결과 표시
         msgs = st.session_state.analysis_results.get(current_doc['id'], [])
         if isinstance(msgs, list):
             for m in msgs:
                 if isinstance(m, dict):
                     bg = "#FFF5F5" if m.get('role') == "story" else "#F0F8FF"
                     border = "#D32F2F" if m.get('role') == "story" else "#0277BD"
-                    st.markdown(f"""
-                    <div class="moneta-card" style="background:{bg}; border-left:4px solid {border}">
-                        <b>{m.get('msg', '')}</b><br>
-                        <span style="font-size:13px; color:#555">💡 제안: {m.get('fix', '')}</span>
-                    </div>""", unsafe_allow_html=True)
+                    st.markdown(
+                        f"""<div class="moneta-card" style="background:{bg}; border-left:4px solid {border}"><b>{m.get('msg', '')}</b><br><span style="font-size:13px; color:#555">💡 제안: {m.get('fix', '')}</span></div>""",
+                        unsafe_allow_html=True)
 
-    # Quill Editor
+    # ---------------------------------------------------------
+    # [UI] 에디터 및 저장
+    # ---------------------------------------------------------
     content = st_quill(value=current_doc.get('content', ""), key=quill_key)
-    if content != current_doc.get('content', ""): current_doc['content'] = content
+    if content != current_doc.get('content', ""):
+        current_doc['content'] = content
 
+    with st.sidebar:
+        st.divider()
+        if st.button("💾 원고 저장하기", type="primary", use_container_width=True):
+            with st.spinner("저장 중..."):
+                try:
+                    payload = {"doc_id": current_doc['id'], "title": current_doc['title'], "content": content}
+                    requests.post("http://127.0.0.1:8000/documents/save", json=payload)
+                    st.toast("저장 완료!", icon="✅")
+                except Exception as e:
+                    st.error(f"저장 실패: {e}")
 
 def render_materials():
     proj = get_current_project()
