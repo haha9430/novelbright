@@ -93,7 +93,7 @@ class SolarClient:
         # create용 payload 스키마(참고)
         character_payload_schema = {
             "name": "string",
-            "birthdate_or_age": "int",
+            "birthdate_or_age": "string",
             "gender": "string",
             "occupation": "string",
             "core_features": ["string", "string", "string"],
@@ -165,9 +165,7 @@ class SolarClient:
             "temperature": 0.2,
         }
 
-        print(f">>> POST {self.base_url}")
         resp = requests.post(self.base_url, headers=headers, json=payload, timeout=30)
-        print(f">>> status {resp.status_code}")
         resp.raise_for_status()
         data = resp.json()
         return self._extract_content(data)

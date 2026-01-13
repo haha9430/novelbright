@@ -12,8 +12,8 @@ from app.common.characters import (
 )
 from app.service.characters.solar_client import SolarClient
 
-INPUT_PATH = "app/common/data/character_input.json"
-DB_PATH = "app/common/data/characters.json"
+INPUT_PATH = "app/data/character_input.json"
+DB_PATH = "app/data/characters.json"
 
 
 def load_input_text(path: str) -> str:
