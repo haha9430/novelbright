@@ -1,8 +1,10 @@
-# check_consistency.py
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_upstage import ChatUpstage
 
 TYPE_LABELS = {
     "world": "세계관 오류",
@@ -32,8 +34,57 @@ class Issue:
         }
 
 
+def extract_original_sentence(raw_text: str, hint: str) -> Optional[str]:
+    if not isinstance(raw_text, str) or not raw_text.strip():
+        return None
+    if not isinstance(hint, str) or not hint.strip():
+        return None
+
+    candidates: List[str] = []
+    for line in raw_text.splitlines():
+        s = line.strip()
+        if s:
+            candidates.append(s)
+
+    if not candidates:
+        return None
+
+    hint_tokens = set(hint.split())
+    best = None
+    best_score = 0
+
+    for c in candidates:
+        score = len(hint_tokens & set(c.split()))
+        if score > best_score:
+            best_score = score
+            best = c
+
+    return best
+
+
+def pick_best_anchor(anchors: List[str], hint: str) -> Optional[str]:
+    if not isinstance(anchors, list) or not anchors:
+        return None
+    if not isinstance(hint, str) or not hint.strip():
+        return None
+
+    hint_tokens = set(hint.split())
+    best = None
+    best_score = 0
+
+    for a in anchors:
+        if not isinstance(a, str) or not a.strip():
+            continue
+        score = len(hint_tokens & set(a.split()))
+        if score > best_score:
+            best_score = score
+            best = a
+
+    return best
+
+
 def _severity_rank(s: str) -> int:
-    s = (s or "").lower()
+    s = (s or "").lower().strip()
     if s == "high":
         return 3
     if s == "medium":
@@ -53,8 +104,7 @@ def _is_failure_issue(i: Issue) -> bool:
 
 def _looks_like_non_conflict(reason: str, title: str) -> bool:
     """
-    '없어서 오류', '연결성 부재', '배타적이지 않음' 같은 쓸데없는 태클을 걸러낸다.
-    LLM이 가끔 이런 식으로 말장난하는 걸 방지.
+    확정 충돌이 아닌(암시/추정/주의/비교불가/없어서 오류 등) 이슈를 걸러낸다.
     """
     r = (reason or "").lower()
     t = (title or "").lower()
@@ -74,6 +124,18 @@ def _looks_like_non_conflict(reason: str, title: str) -> bool:
         "명시되어 있지만",
         "추론",
         "가능성",
+        "주의 필요",
+        "비교 불가",
+        "충돌은 없음",
+        "해당하지 않음",
+
+        # ✅ 여기 추가: '암시/추정/추측' 기반이면 확정 충돌 아님 → 버림
+        "암시",
+        "추정",
+        "추측",
+        "아마",
+        "같다",
+        "같은데",
     ]
 
     return any(p in r for p in bad_phrases) or any(p in t for p in ["연결성", "추론"])
@@ -97,27 +159,19 @@ def _merge_same_sentence(issues: List[Issue]) -> List[Issue]:
 
         type_set: List[str] = []
         for x in items:
-            t = x.type if x.type in TYPE_LABELS else "plot"
-            if t not in type_set:
-                type_set.append(t)
+            tt = x.type if x.type in TYPE_LABELS else "plot"
+            if tt not in type_set:
+                type_set.append(tt)
 
         title = " + ".join(TYPE_LABELS[t] for t in type_set) if type_set else "복합 오류"
 
         reasons: List[str] = []
         for x in items:
-            r = (x.reason or "").strip()
-            if not r:
-                continue
-            if r not in reasons:
-                reasons.append(r)
+            rr = (x.reason or "").strip()
+            if rr and rr not in reasons:
+                reasons.append(rr)
 
-        if not reasons:
-            reason = "원고의 해당 문장이 설정/연속성과 충돌합니다."
-        else:
-            keep = reasons[:3]
-            if len(reasons) > 3:
-                keep.append("추가 충돌도 발견되어 요약했습니다.")
-            reason = "\n".join(keep)
+        reason = "\n".join(reasons[:3]) if reasons else "원고의 해당 문장이 설정/연속성과 충돌합니다."
 
         sev = "low"
         for x in items:
@@ -134,39 +188,105 @@ def _merge_same_sentence(issues: List[Issue]) -> List[Issue]:
     return merged
 
 
+def _verify_issue_not_resolved_by_later_text(*, issue: Issue, full_text: str) -> bool:
+    if not full_text.strip():
+        return True
+    if not issue.sentence or not issue.sentence.strip():
+        return True
+
+    llm = ChatUpstage(model="solar-pro")
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """
+너는 '이슈 후반 해소 검증기'다.
+반드시 원고 전체를 끝까지 읽고 판단한다.
+
+판정:
+- issue_sentence가 후반에서 명시적으로 정정/해소되면 resolved=true
+- 근거 없이 추측하지 말 것. 원고 문장 기반으로만.
+
+출력 JSON only:
+{{{{ "resolved": true|false }}}}
+"""),
+        ("human", """[issue_title]
+{title}
+
+[issue_sentence]
+{issue_sentence}
+
+[issue_reason]
+{issue_reason}
+
+[manuscript_full]
+{full_text}
+"""),
+    ])
+
+    try:
+        raw = (prompt | llm).invoke({
+            "title": issue.title or "",
+            "issue_sentence": issue.sentence or "",
+            "issue_reason": issue.reason or "",
+            "full_text": full_text,
+        })
+        content = (raw.content if hasattr(raw, "content") else str(raw)) or ""
+    except Exception:
+        return True
+
+    c = content.lower()
+    if '"resolved": true' in c:
+        return False
+    if '"resolved": false' in c:
+        return True
+
+    return True
+
+
 def check_consistency(
     *,
     episode_facts: Dict[str, Any],
     plot_config: Dict[str, Any],
     character_config: Dict[str, Any],
     story_state: Dict[str, Any],
+    severity_threshold: str = "medium",
 ) -> List[Dict[str, Any]]:
     from .world_rules import check_world_consistency
     from .character_rules import check_character_consistency
     from .plot_rules import check_plot_consistency
+
+    threshold_rank = _severity_rank(severity_threshold)
+    if threshold_rank not in (1, 2, 3):
+        threshold_rank = 2
 
     issues: List[Issue] = []
     issues += check_world_consistency(episode_facts, plot_config)
     issues += check_character_consistency(episode_facts, character_config, story_state)
     issues += check_plot_consistency(episode_facts, plot_config, story_state)
 
+    full_text = episode_facts.get("raw_text", "") if isinstance(episode_facts, dict) else ""
+
     alive: List[Issue] = []
     for i in issues:
-        # 실패 이슈는 남김
         if _is_failure_issue(i):
+            i.severity = "high"
             if not i.sentence:
                 i.sentence = "(원고 전체)"
             if not i.reason:
                 i.reason = "룰 엔진이 정상적으로 결과를 만들지 못했습니다."
-            alive.append(i)
+            if _severity_rank(i.severity) >= threshold_rank:
+                alive.append(i)
             continue
 
-        # 정상 이슈 최소 요건
         if not i.sentence or not i.reason:
             continue
 
-        # ✅ 쓸데없는 태클 제거
         if _looks_like_non_conflict(i.reason, i.title):
+            continue
+
+        if not _verify_issue_not_resolved_by_later_text(issue=i, full_text=full_text):
+            continue
+
+        if _severity_rank(i.severity) < threshold_rank:
             continue
 
         alive.append(i)
