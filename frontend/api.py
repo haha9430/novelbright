@@ -14,19 +14,19 @@ def save_document_api(doc_id, title, content):
         return False
 
 
-def analyze_text_api(doc_id, content, modules=None):
+def analyze_text_api(doc_id, content, episode_no=1, modules=None):  # [수정] episode_no 인자 추가
     """
-    AI 분석 요청 (modules: ['storykeeper'] 또는 ['clio'] 또는 둘 다)
+    AI 분석 요청
     """
     try:
-        # modules가 없으면 기본적으로 둘 다 포함 (혹은 백엔드 기본값 따름)
         if modules is None:
             modules = ["storykeeper", "clio"]
 
         payload = {
             "doc_id": doc_id,
             "content": content,
-            "modules": modules  # [추가됨] 백엔드에 어떤 기능을 쓸지 알려줌
+            "episode_no": int(episode_no),  # [NEW] 회차 번호 전송
+            "modules": modules
         }
 
         res = requests.post(f"{BASE_URL}/analyze/text", json=payload)

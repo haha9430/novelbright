@@ -54,6 +54,7 @@ class MaterialPayload(BaseModel):
 class AnalysisRequest(BaseModel):
     doc_id: str
     content: str
+    episode_no: int = 1  # [NEW] 회차 번호 (기본값 1)
     modules: Optional[List[str]] = ["storykeeper", "clio"]
 
 
@@ -87,7 +88,10 @@ def api_get_document(doc_id: str):
 def api_analyze_text(req: AnalysisRequest):
     content = req.content
     modules = req.modules or []
-    print(f"🔄 [Analyze] 요청: {len(content)}자 (Modules: {modules})")
+    episode = req.episode_no  # [NEW] 변수 할당
+
+    # 로그에 회차 정보도 같이 출력
+    print(f"🔄 [Analyze] 요청: {len(content)}자 (Ep.{episode}, Modules: {modules})")
 
     results = []
 

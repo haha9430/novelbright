@@ -1,6 +1,7 @@
 import streamlit as st
 from streamlit_quill import st_quill
 from bs4 import BeautifulSoup
+import datetime
 
 # 컴포넌트 및 API 불러오기
 from components.common import get_current_project, get_current_document
@@ -25,31 +26,66 @@ def render_editor():
     content_raw = st.session_state.get(quill_key)
     content_source = content_raw if content_raw is not None else current_doc.get('content', "")
 
-    char_count_total = 0
-    char_count_no_space = 0
-    if content_source:
-        soup = BeautifulSoup(content_source, "html.parser")
-        plain_text = soup.get_text()
-        char_count_total = len(plain_text)
-        char_count_no_space = len(plain_text.replace(" ", "").replace("\n", ""))
+    if "last_save_time" not in st.session_state:
+        st.session_state.last_save_time = "대기 중"
+
+    def calculate_stats(text):
+        if not text: return 0, 0
+        soup = BeautifulSoup(text, "html.parser")
+        plain = soup.get_text()
+        return len(plain), len(plain.replace(" ", "").replace("\n", ""))
+
+    char_total, char_nospace = calculate_stats(content_source)
 
     # 4. 헤더 영역
+    # [수정] vertical_alignment="bottom"을 줘서 제목과 버튼, 통계의 라인을 맞춤
     c_title, c_stats, c_btn = st.columns([6, 2.5, 1.5], gap="small", vertical_alignment="bottom")
 
     with c_title:
-        st.markdown('<div class="doc-title-input">', unsafe_allow_html=True)
-        new_t = st.text_input("t", value=current_doc['title'], key=f"t_{current_doc['id']}",
-                              label_visibility="collapsed", placeholder="제목 없음")
-        if new_t != current_doc['title']:
-            current_doc['title'] = new_t
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        # [수정] 회차(1.2) : 제목(8.8) 비율로 나눔 + 하단 정렬
+        c_ep, c_txt = st.columns([1.2, 8.8], vertical_alignment="bottom")
 
+        with c_ep:
+            # 제목과 동일한 스타일 클래스 적용 (큰 글씨, 투명 배경)
+            st.markdown('<div class="doc-title-input">', unsafe_allow_html=True)
+
+            # number_input 대신 text_input 사용 (디자인 통일 위해)
+            ep_str = str(current_doc.get('episode_no', 1))
+            new_ep = st.text_input("ep", value=ep_str, key=f"ep_{current_doc['id']}",
+                                   label_visibility="collapsed", placeholder="1")
+
+            if new_ep != ep_str:
+                # 숫자만 입력했는지 확인
+                if new_ep.isdigit():
+                    current_doc['episode_no'] = int(new_ep)
+                    save_document_api(current_doc['id'], current_doc['title'], content_source)
+                    st.rerun()
+                else:
+                    st.toast("회차는 숫자만 입력 가능합니다.", icon="⚠️")
+                    # 잘못된 입력 시 새로고침하여 원상복구
+                    st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with c_txt:
+            st.markdown('<div class="doc-title-input">', unsafe_allow_html=True)
+            new_t = st.text_input("t", value=current_doc['title'], key=f"t_{current_doc['id']}",
+                                  label_visibility="collapsed", placeholder="제목 없음")
+            if new_t != current_doc['title']:
+                current_doc['title'] = new_t
+                if save_document_api(current_doc['id'], current_doc['title'], content_source):
+                    st.session_state.last_save_time = datetime.datetime.now().strftime("%H:%M:%S")
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    # 통계 및 상태 표시 영역
     with c_stats:
-        st.markdown(f"""
+        stats_placeholder = st.empty()
+        stats_placeholder.markdown(f"""
             <div style="text-align: right; color: #888; font-size: 13px; margin-bottom: 8px;">
-                <span style="font-weight:bold; color:#5D4037;">{char_count_total:,}</span> 자 
-                <span style="font-size:11px; color:#aaa;">(공백제외 {char_count_no_space:,})</span>
+                <span style="font-weight:bold; color:#5D4037;">{char_total:,}</span> 자 
+                <span style="font-size:11px; color:#aaa;">(공백제외 {char_nospace:,})</span>
+                <br>
+                <span style="font-size:11px; color:#4CAF50;">✅ {st.session_state.last_save_time} 저장됨</span>
             </div>
             """, unsafe_allow_html=True)
 
@@ -59,113 +95,87 @@ def render_editor():
             st.session_state.show_moneta = not st.session_state.show_moneta
             st.rerun()
 
-    # 5. Moneta 패널
+    # 5. Moneta 패널 (기존 유지)
     if st.session_state.show_moneta:
-        # 상태 변수 초기화
-        if "last_opened_expander" not in st.session_state:
-            st.session_state.last_opened_expander = None
-
-        # [NEW] 분석 상태 추적 (어떤 분석이 실행되었고 결과가 없었는지 확인용)
+        if "last_opened_expander" not in st.session_state: st.session_state.last_opened_expander = None
         if "sk_analyzed" not in st.session_state: st.session_state.sk_analyzed = False
         if "clio_analyzed" not in st.session_state: st.session_state.clio_analyzed = False
 
         with st.container(border=True):
-            st.caption("AI 분석 도구를 선택하세요.")
-            col_sk, col_clio = st.columns(2, gap="small")
+            # [안내 문구] 현재 회차 표시
+            ep_num = current_doc.get('episode_no', 1)
+            st.caption(f"AI 분석 도구를 선택하세요. (현재 분석 대상: {ep_num}화)")
 
-            # 현재 저장된 전체 결과 가져오기
+            col_sk, col_clio = st.columns(2, gap="small")
             current_results = st.session_state.analysis_results.get(current_doc['id'], [])
 
-            # (1) 스토리키퍼 버튼 (개연성) - role: logic
             with col_sk:
                 if st.button("🛡️ 스토리키퍼 (개연성)", use_container_width=True):
-                    with st.spinner("스토리키퍼 분석 중..."):
-                        api_res = analyze_text_api(current_doc['id'], content_source, modules=["storykeeper"])
-
-                        # logic 결과만 추출
-                        new_logic_items = [item for item in api_res if item.get('role') == 'logic']
-
-                        # 기존 logic 결과 삭제 후 병합
-                        results_without_logic = [item for item in current_results if item.get('role') != 'logic']
-                        final_results = results_without_logic + new_logic_items
-
-                        st.session_state.analysis_results[current_doc['id']] = final_results
+                    with st.spinner("분석 중..."):
+                        api_res = analyze_text_api(current_doc['id'], content_source,
+                                                   episode_no=ep_num,
+                                                   modules=["storykeeper"])
+                        new_items = [i for i in api_res if i.get('role') == 'logic']
+                        filtered = [i for i in current_results if i.get('role') != 'logic']
+                        st.session_state.analysis_results[current_doc['id']] = filtered + new_items
                         st.session_state.last_opened_expander = "storykeeper"
-                        st.session_state.sk_analyzed = True  # 분석 실행됨 표시
+                        st.session_state.sk_analyzed = True
                         st.rerun()
 
-            # (2) 클리오 버튼 (역사 고증) - role: story
             with col_clio:
                 if st.button("🏛️ 클리오 (역사 고증)", use_container_width=True):
-                    with st.spinner("클리오 분석 중..."):
-                        api_res = analyze_text_api(current_doc['id'], content_source, modules=["clio"])
-
-                        # story 결과만 추출
-                        new_story_items = [item for item in api_res if item.get('role') == 'story']
-
-                        # 기존 story 결과 삭제 후 병합
-                        results_without_story = [item for item in current_results if item.get('role') != 'story']
-                        final_results = results_without_story + new_story_items
-
-                        st.session_state.analysis_results[current_doc['id']] = final_results
+                    with st.spinner("분석 중..."):
+                        api_res = analyze_text_api(current_doc['id'], content_source,
+                                                   episode_no=ep_num,
+                                                   modules=["clio"])
+                        new_items = [i for i in api_res if i.get('role') == 'story']
+                        filtered = [i for i in current_results if i.get('role') != 'story']
+                        st.session_state.analysis_results[current_doc['id']] = filtered + new_items
                         st.session_state.last_opened_expander = "clio"
-                        st.session_state.clio_analyzed = True  # 분석 실행됨 표시
+                        st.session_state.clio_analyzed = True
                         st.rerun()
 
-        # ------------------------------------------------------------------
-        # [결과 표시] 둘 다 Expander 적용 & 결과 없음 처리
-        # ------------------------------------------------------------------
+        # 결과 표시 (Expander)
         results = st.session_state.analysis_results.get(current_doc['id'], [])
-
         sk_msgs = [m for m in results if m.get('role') == 'logic']
         clio_msgs = [m for m in results if m.get('role') == 'story']
 
-        # [UI 1] 스토리키퍼 섹션
-        # 분석을 실행했는데(sk_analyzed) 결과가 있거나 없거나 무조건 표시
         if st.session_state.sk_analyzed:
-            is_expanded = (st.session_state.last_opened_expander == "storykeeper")
-
-            label = f"🛡️ 스토리키퍼 결과 ({len(sk_msgs)})"
-            if not sk_msgs: label = "🛡️ 스토리키퍼 (발견된 오류 없음)"
-
-            with st.expander(label, expanded=is_expanded):
+            label = f"🛡️ 스토리키퍼 결과 ({len(sk_msgs)})" if sk_msgs else "🛡️ 스토리키퍼 (발견된 오류 없음)"
+            with st.expander(label, expanded=(st.session_state.last_opened_expander == "storykeeper")):
                 if sk_msgs:
                     for m in sk_msgs:
-                        st.markdown(f"""
-                            <div class="moneta-card" style="background:#F0F8FF; border-left:4px solid #0277BD">
-                                <b>{m.get('msg', '')}</b><br>
-                                <span style="font-size:13px; color:#555">💡 제안: {m.get('fix', '')}</span>
-                            </div>""", unsafe_allow_html=True)
+                        st.markdown(
+                            f"""<div class="moneta-card" style="background:#F0F8FF; border-left:4px solid #0277BD"><b>{m.get('msg')}</b><br><span style="font-size:13px; color:#555">💡 제안: {m.get('fix')}</span></div>""",
+                            unsafe_allow_html=True)
                 else:
-                    st.success("✅ 설정 충돌이나 개연성 오류가 발견되지 않았습니다.")
+                    st.success("✅ 설정 충돌 없음")
 
-        # [UI 2] 클리오 섹션
         if st.session_state.clio_analyzed:
-            is_expanded = (st.session_state.last_opened_expander == "clio")
-
-            label = f"🏛️ 클리오 결과 ({len(clio_msgs)})"
-            if not clio_msgs: label = "🏛️ 클리오 (발견된 오류 없음)"
-
-            with st.expander(label, expanded=is_expanded):
+            label = f"🏛️ 클리오 결과 ({len(clio_msgs)})" if clio_msgs else "🏛️ 클리오 (발견된 오류 없음)"
+            with st.expander(label, expanded=(st.session_state.last_opened_expander == "clio")):
                 if clio_msgs:
                     for m in clio_msgs:
-                        st.markdown(f"""
-                            <div class="moneta-card" style="background:#FFF5F5; border-left:4px solid #D32F2F">
-                                <b>{m.get('msg', '')}</b><br>
-                                <span style="font-size:13px; color:#555">💡 제안: {m.get('fix', '')}</span>
-                            </div>""", unsafe_allow_html=True)
+                        st.markdown(
+                            f"""<div class="moneta-card" style="background:#FFF5F5; border-left:4px solid #D32F2F"><b>{m.get('msg')}</b><br><span style="font-size:13px; color:#555">💡 제안: {m.get('fix')}</span></div>""",
+                            unsafe_allow_html=True)
                 else:
-                    st.success("✅ 역사적 고증 오류가 발견되지 않았습니다.")
+                    st.success("✅ 고증 오류 없음")
 
     # 6. 에디터 영역
     content = st_quill(value=current_doc.get('content', ""), key=quill_key)
 
     if content != current_doc.get('content', ""):
         current_doc['content'] = content
-
-    with st.sidebar:
-        st.divider()
-        if st.button("💾 원고 저장하기", type="primary", use_container_width=True):
-            with st.spinner("저장 중..."):
-                if save_document_api(current_doc['id'], current_doc['title'], content):
-                    st.toast("저장 완료!", icon="✅")
+        if save_document_api(current_doc['id'], current_doc['title'], content):
+            now_str = datetime.datetime.now().strftime("%H:%M:%S")
+            st.session_state.last_save_time = now_str
+            new_total, new_nospace = calculate_stats(content)
+            stats_placeholder.markdown(f"""
+                <div style="text-align: right; color: #888; font-size: 13px; margin-bottom: 8px;">
+                    <span style="font-weight:bold; color:#5D4037;">{new_total:,}</span> 자 
+                    <span style="font-size:11px; color:#aaa;">(공백제외 {new_nospace:,})</span>
+                    <br>
+                    <span style="font-size:11px; color:#4CAF50;">✅ {now_str} 저장됨</span>
+                </div>
+                """, unsafe_allow_html=True)

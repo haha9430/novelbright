@@ -11,22 +11,31 @@ def get_current_project():
         st.session_state.current_project_id = st.session_state.projects[0]['id']
     return next((p for p in st.session_state.projects if p['id'] == st.session_state.current_project_id), None)
 
+
 def get_current_document(proj):
     if not proj.get('documents'):
-        new_doc = {"id": str(uuid.uuid4()), "title": "새 문서", "content": ""}
+        # [수정] 새 문서 생성 시 episode_no: 1 추가
+        new_doc = {"id": str(uuid.uuid4()), "title": "새 문서", "content": "", "episode_no": 1}
         proj['documents'] = [new_doc]
         st.session_state.current_doc_id = new_doc['id']
         return new_doc
 
     if st.session_state.current_doc_id is None:
         doc = proj['documents'][0]
+        # 기존 문서에 episode_no가 없을 경우를 대비한 안전장치
+        if "episode_no" not in doc: doc["episode_no"] = 1
         st.session_state.current_doc_id = doc['id']
         return doc
 
     doc = next((d for d in proj['documents'] if d['id'] == st.session_state.current_doc_id), None)
     if not doc:
         doc = proj['documents'][0]
+        if "episode_no" not in doc: doc["episode_no"] = 1
         st.session_state.current_doc_id = doc['id']
+
+    # 한번 더 체크 (기존 데이터 호환성)
+    if "episode_no" not in doc: doc["episode_no"] = 1
+
     return doc
 
 # =========================================================
