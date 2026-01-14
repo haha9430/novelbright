@@ -1,4 +1,3 @@
-# plot_rules.py
 from __future__ import annotations
 
 import json
@@ -9,7 +8,7 @@ from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_upstage import ChatUpstage
 
-from .check_consistency import Issue
+from .check_consistency import Issue, extract_original_sentence, pick_best_anchor
 
 load_dotenv()
 
@@ -90,21 +89,6 @@ def _history_value_anchors(history: Dict[str, Any]) -> List[str]:
             if s and s != "null":
                 anchors.append(s)
 
-    for vv in list(history.values())[:40]:
-        if isinstance(vv, dict):
-            for kk in ("summary", "important_parts"):
-                x = vv.get(kk)
-                if isinstance(x, list):
-                    for it in x[:12]:
-                        if _is_leaf(it):
-                            s = _stringify(it)
-                            if s and s != "null":
-                                anchors.append(s)
-                elif _is_leaf(x):
-                    s = _stringify(x)
-                    if s and s != "null":
-                        anchors.append(s)
-
     uniq: List[str] = []
     seen = set()
     for a in anchors:
@@ -113,9 +97,7 @@ def _history_value_anchors(history: Dict[str, Any]) -> List[str]:
         seen.add(a)
         uniq.append(a)
 
-    if len(uniq) > 160:
-        uniq = uniq[:160]
-    return uniq
+    return uniq[:160]
 
 
 def _plot_value_anchors(plot_config: Dict[str, Any]) -> List[str]:
@@ -123,10 +105,24 @@ def _plot_value_anchors(plot_config: Dict[str, Any]) -> List[str]:
     if not isinstance(plot_config, dict):
         return anchors
 
-    for k in ("theme", "premise", "constraints", "rules", "major_events", "forbidden", "must"):
+    # plot.json에 있는 텍스트들을 앵커로 폭넓게 수집 (장르 상관없이)
+    for k in (
+        "summary",
+        "important_parts",
+        "theme",
+        "premise",
+        "constraints",
+        "rules",
+        "major_events",
+        "forbidden",
+        "must",
+        "events",
+        "highlights",
+        "key_points",
+    ):
         v = plot_config.get(k)
         if isinstance(v, list):
-            for x in v[:40]:
+            for x in v[:80]:
                 if _is_leaf(x):
                     s = _stringify(x)
                     if s and s != "null":
@@ -136,7 +132,7 @@ def _plot_value_anchors(plot_config: Dict[str, Any]) -> List[str]:
             if s and s != "null":
                 anchors.append(s)
         elif isinstance(v, dict):
-            for vv in list(v.values())[:40]:
+            for vv in list(v.values())[:80]:
                 if _is_leaf(vv):
                     s = _stringify(vv)
                     if s and s != "null":
@@ -150,9 +146,7 @@ def _plot_value_anchors(plot_config: Dict[str, Any]) -> List[str]:
         seen.add(a)
         uniq.append(a)
 
-    if len(uniq) > 140:
-        uniq = uniq[:140]
-    return uniq
+    return uniq[:200]
 
 
 def check_plot_consistency(
@@ -179,24 +173,26 @@ def check_plot_consistency(
         ("system", """
 너는 ‘원고-플롯/연속성 비교기’다.
 외부 상식/현실/역사/고증 판단은 절대 하지 않는다.
+오직 anchors에 있는 문장과 원고 문장의 '정면 부정/배타 충돌'만 뽑는다.
 
-[금지]
-- "anchors에 없어서 오류", "연결성", "고려/추론" 같은 말 금지.
-- 배타적 충돌이 아니면 이슈를 만들지 마라.
-
-[판정 기준]
-- 정면 부정 또는 배타 충돌(동시에 성립 불가)이 원고에 확정 서술된 경우만 이슈.
-- 애매한 표현(가능성/추측/비유/꿈/회상)은 오류로 잡지 말 것.
-- anchors에 없는 정보는 오류 아님.
+[필수 규칙]
+- 이슈를 만들 때, 어떤 anchor 문장과 충돌인지 anchor_sentence에 anchors에서 '그대로' 복붙해라.
+- sentence는 원고에서 '그대로' 복붙해라.
+- anchor_sentence가 anchors에 없으면 이슈를 만들지 마라.
+- sentence가 원고에 없으면 이슈를 만들지 마라.
+- 애매한 표현(가능/추측/비유/꿈/회상)은 제외.
 
 [출력(JSON only)]
-{{ "issues": [ {{ "type": "plot|continuity", "title": "...", "sentence": "...", "reason": "...", "severity": "low|medium|high" }} ] }}
+{{{{ "issues": [ {{{{
+  "type": "plot|continuity",
+  "title": "...",
+  "anchor_sentence": "...",
+  "sentence": "...",
+  "reason": "...",
+  "severity": "low|medium|high"
+}}}} ] }}}}
 없으면:
-{{ "issues": [] }}
-
-[reason 작성]
-- 사람이 읽는 문장 1~2줄.
-- "이전 전개에서는 A인데 원고는 B로 확정이라 동시에 성립 불가" 형태만.
+{{{{ "issues": [] }}}}
 """),
         ("human", """[anchors]
 {anchors}
@@ -231,9 +227,16 @@ def check_plot_consistency(
         if not isinstance(it, dict):
             continue
 
-        sentence = it.get("sentence")
-        sentence = sentence.strip() if isinstance(sentence, str) and sentence.strip() else None
-        if not sentence:
+        # 1) anchor 검증 (장르필터 아님, 근거필터임)
+        anchor_hint = str(it.get("anchor_sentence") or "").strip()
+        anchor_norm = pick_best_anchor(anchors, anchor_hint)
+        if not anchor_norm or anchor_norm not in anchors:
+            continue
+
+        # 2) 원문 sentence 강제
+        hint_sentence = str(it.get("sentence") or "").strip()
+        original_sentence = extract_original_sentence(full_text, hint_sentence)
+        if not original_sentence:
             continue
 
         reason = str(it.get("reason") or "").strip()
@@ -248,10 +251,12 @@ def check_plot_consistency(
         if t not in ("plot", "continuity"):
             t = "plot"
 
+        # title이 이상하게 '나이'로 가도 상관없음
+        # 진짜 중요한 건 anchor_sentence + sentence 근거가 통과했냐임
         out.append(Issue(
             type=t,
             title=str(it.get("title") or "플롯/연속성 충돌"),
-            sentence=sentence,
+            sentence=original_sentence,
             reason=reason,
             severity=sev,
         ))
