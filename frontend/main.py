@@ -155,7 +155,34 @@ dark_theme = """
 """
 
 selected_css = dark_theme if st.session_state.dark_mode else light_theme
-st.markdown(f"<style>{common_css}{selected_css}</style>", unsafe_allow_html=True)
+st.markdown("""
+    <style>
+        /* 1. 헤더 전체를 숨기지 말고 배경만 투명하게 변경 (버튼이 살 공간 확보) */
+        header[data-testid="stHeader"] {
+            background-color: transparent !important;
+            z-index: 1; /* 다른 요소보다 위에 오게 설정 */
+        }
+
+        /* 2. (선택사항) 햄버거 메뉴(점 3개)는 숨기고 싶다면 아래 코드 사용 */
+        /* .stAppDeployButton, [data-testid="stMainMenu"] {
+            display: none;
+        } 
+        */
+
+        /* 3. ★ 핵심: 사이드바 열기 버튼(화살표)을 강제로 보이게 하고 색상 지정 */
+        section[data-testid="stSidebar"] > div > div:nth-child(2) {
+            /* 이 부분은 Streamlit 버전에 따라 다를 수 있어 아래 클래스 선택자도 같이 씁니다 */
+        }
+
+        [data-testid="stSidebarCollapsedControl"] {
+            display: block !important;
+            color: #ffffff !important; /* 다크모드면 흰색, 라이트모드면 검은색(#000000) */
+            background-color: rgba(100, 100, 100, 0.5); /* 잘 보이게 반투명 배경 추가 */
+            border-radius: 5px;
+            padding: 2px;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # =========================================================
 # 3. Main Routing

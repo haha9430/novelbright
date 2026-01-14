@@ -30,10 +30,36 @@ class DeleteRequest(BaseModel):
 # Helper Functions (내부 함수)
 # ---------------------------------------------------------
 def _normalize_ingest_payload(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
-    # ... (기존 코드 그대로 복사) ...
+    """
+    [수정됨] LLM이 추출한 모든 필드를 보존하면서 문자열 정제(strip)만 수행합니다.
+    """
+
+    # 1. 안전하게 값 가져오기 & 문자열 앞뒤 공백 제거
+    def clean_str(key: str, default: str = "") -> str:
+        val = raw_payload.get(key)
+        if val is None:
+            return default
+        return str(val).strip()
+
+    # 2. 리스트 타입 안전하게 가져오기
+    def clean_list(key: str) -> List[Any]:
+        val = raw_payload.get(key)
+        if isinstance(val, list):
+            return val
+        return []
+
+    # 3. 모든 필드를 꽉 채워서 반환
     return {
-        "name": str(raw_payload.get("name", "")).strip(),
-        # ... 생략 ...
+        "name": clean_str("name", "Unknown"),
+        "entity_type": clean_str("entity_type", "Unknown"),
+        "era": clean_str("era"),
+        "summary": clean_str("summary"),
+        "description": clean_str("description"),  # 👈 [핵심] 이제 설명이 안 잘립니다!
+        "tags": clean_list("tags"),
+        "related_entities": clean_list("related_entities"),
+
+        # 혹시 모를 추가 필드(메타데이터 등)가 있다면 raw_payload에서 가져오거나
+        # 필요한 경우 여기에 추가하세요.
     }
 
 def _merge_entity_data(existing: Dict[str, Any], new_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -395,28 +421,25 @@ async def upsert_history(payload: HistoryUpsertRequest):
 
     # 1. 반복문 시작
     for cmd in commands:
-        suggested_action = cmd.get("action", "create")
+        action = cmd.get("action", "create")
         target_name = cmd.get("target", {}).get("name")
 
-        final_action = suggested_action
-
-        log_item = {"name": target_name, "action": final_action, "status": "pending"}
+        log_item = {"name": target_name, "action": action, "status": "pending"}
 
         try:
             raw_payload = cmd.get("payload", {})
             normalized_payload = _normalize_ingest_payload(raw_payload)
 
-            if final_action == "create":
-                # [중요] auto_sync=False로 설정하여 매번 동기화 방지
-                saved_entity = history_repo.create_entity(HISTORY_DB_PATH, normalized_payload, auto_sync=False)
+            # [중요] auto_sync=False로 설정하여 매번 동기화 방지
+            saved_entity = history_repo.create_entity(HISTORY_DB_PATH, normalized_payload, auto_sync=False)
 
-                log_item.update({
-                    "status": "success",
-                    "id": saved_entity["id"],
-                    "message": "새로 생성됨",
-                    "result_data": saved_entity
-                })
-                success_count += 1
+            log_item.update({
+                "status": "success",
+                "id": saved_entity["id"],
+                "message": "새로 생성됨",
+                "result_data": saved_entity
+            })
+            success_count += 1
 
         except Exception as e:
             log_item.update({"status": "error", "message": str(e)})

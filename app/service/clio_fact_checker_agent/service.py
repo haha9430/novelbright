@@ -212,41 +212,38 @@ class ManuscriptAnalyzer:
             print(f"🔍 분석 중: '{keyword}' (Query: {query_string})")
 
             # Step A: 로컬 DB 확인 (Vector Store)
-            local_result = self._check_local_db(keyword)
-            if local_result:
+            search_data = self._check_local_db(keyword)
+
+            if search_data:
                 print(f"   ✅ 로컬 DB 발견")
-                historical_context.append(local_result)
-                continue # 로컬에 있으면 웹 검색 스킵
+            else:
+                # Step B: 로컬에 없으면 웹 검색 (Serper)
+                search_data = self._search_web(query_string)
 
-            # [Process] 정보 검색 시작
-            # Step B: 웹 검색 (Serper)
-            web_data = self._search_web(query_string)
-
-            if web_data:
-                # Step C: [검증 & 팩트체크]
-                # ★ 수정 포인트: 맥락(item_data['reason'])을 같이 넘겨줍니다.
+            # Step C: [통합 검증 & 팩트체크]
+            # 로컬 DB에서 가져왔든, 웹에서 가져왔든 동일하게 검증을 수행합니다.
+            if search_data:
                 verification = self._verify_content_relevance(
                     keyword,
                     query_string,
-                    web_data['content'],
+                    search_data['content'],
                     context=origin_sent
                 )
 
-                # 1. 자료 자체가 쓸모없는 경우 (예: 동명이인 연예인) -> 버림
+                # 1. 자료 자체가 유의미한지 확인 (Relevant)
                 if verification['is_relevant']:
-                    web_data['is_relevant'] = True
+                    search_data['is_relevant'] = True
+                    search_data['is_positive'] = verification['is_positive']
+                    search_data['reason'] = verification['reason']
 
-                    # 2. 자료는 맞는데, 소설 내용과 일치하는가? (팩트체크 결과 저장)
-                    # ★ 수정 포인트: True/False 여부를 필터링하지 않고 결과에 '저장'만 합니다.
-                    web_data['is_positive'] = verification['is_positive']
-                    web_data['reason'] = verification['reason']
-                    web_data['original_sentence'] = origin_sent
-                    web_data['start_index'] = item_data.get('start_index')
-                    web_data['end_index'] = item_data.get('end_index')
+                    # 위치 정보 및 원문 보존
+                    search_data['original_sentence'] = origin_sent
+                    search_data['start_index'] = item_data.get('start_index')
+                    search_data['end_index'] = item_data.get('end_index')
 
-                    historical_context.append(web_data)
+                    historical_context.append(search_data)
 
-                    # 로그 출력 (오류 발견 시 눈에 띄게)
+                    # 로그 출력
                     if verification['is_positive']:
                         print(f"   ✅ 검증 통과: {verification['reason']}")
                     else:
@@ -255,7 +252,7 @@ class ManuscriptAnalyzer:
                 else:
                     print(f"   🗑️ 관련 없는 자료(검증 탈락): {verification['reason']}")
 
-            time.sleep(0.2)# API 속도 조절
+            time.sleep(0.2) # API 속도 조절
 
         return {
             "found_entities_count": len(all_query_items),
@@ -265,36 +262,41 @@ class ManuscriptAnalyzer:
 
     def _extract_search_queries(self, text: str) -> List[Dict[str, str]]:
         """
-        [수정됨] 구체적인 예시를 제거하고 논리적 지시만 남긴 쿼리 생성기
+        [Upgraded] 역사적 맥락에 맞춰 '최적의 언어'로 검색 쿼리를 생성하는 함수
         """
         prompt = """
-        당신은 역사 소설 고증을 위한 '검색 쿼리 생성기'입니다.
-        주어진 텍스트를 읽고, 역사적 사실 확인이 필요한 항목을 찾아 **구체적인 검색어**로 변환하세요.
+        당신은 역사 소설 고증을 위한 **'다국어 팩트 검증 쿼리 설계자'**입니다.
+        텍스트를 분석하여 역사적 사실 관계를 검증할 수 있는 쿼리를 작성하되, **해당 사건이 발생한 문화권의 언어**를 사용하여 검색 정확도를 극대화하세요.
 
-        [작업 규칙]
-        1. **대상:** 실존 인물, 지명, 사건, 유물, 당시의 문화/제도.
-        2. **제외(Strict):** - '의과 대학', '병원', '신부님', '마차' 같은 **수식어 없는 일반 명사 절대 제외**.
-           - '19세기', '오늘', '내일', '런던의 거리' 같은 **단순 시공간 묘사 제외**.
-           - 주인공의 사적인 행동, 감정 묘사, 대화의 일상적인 소재 제외.
-        3. **원문 유지(Critical):** - `original_sentence`를 추출할 때, **절대로 문장을 요약하거나 수정하지 마세요.**
-           - 조사, 문장 부호, 띄어쓰기까지 **본문 그대로 복사**해야 시스템이 위치를 찾을 수 있습니다.
-        4. **쿼리 최적화 지침:** - 단순히 본문의 단어를 그대로 쓰지 말고, **검색 엔진이 이해하기 쉬운 형태**로 조합하세요.
-           - 인물 이름이 불완전하게 나오면(예: 성만 나오거나 이름만 나올 때), 문맥을 파악해 **전체 이름이나 직업**을 덧붙이세요.
-           - 지명이나 고유명사가 모호할 경우, **'역사', '유래', '19세기' 등의 키워드**를 쿼리에 포함시켜 범위를 좁히세요.
+        [핵심 작업 규칙]
+        1. **관계 중심 쿼리 (Relationship-First):**
+           - 단일 명사 대신 **[주체] + [행위/직함/사건] + [시기]**를 조합하여 구체적인 사실 여부를 묻는 쿼리를 만드세요.
+
+        2. **언어 최적화 전략 (Language Localization) - 중요! 🌍:**
+           - **한국사** '한국어'로 작성하세요.
+           - **서양사 (영미/유럽):** 반드시 **'영어(English)'**로 작성하세요. 원어 검색 결과가 훨씬 정확합니다.
+           - **일본/중국사:** 가능하면 **'현지어(한자/가나)'** 또는 **'영어'**를 사용하세요. 한국어 발음 검색은 지양하세요.
+
+        3. **불필요한 일반 명사 배제:**
+           - '의과 대학', '병원', '마차' 등 일반 명사는 제외하되, "First public demonstration of ether anesthesia" 처럼 특정 사건을 지칭하면 포함하세요.
+
+        4. **원문 보존 (Absolute Rule):**
+           - `original_sentence`는 조사 하나 바꾸지 말고 본문 그대로 복사하세요.
 
         [출력 형식]
         반드시 아래와 같은 **JSON 리스트**만 출력하세요.
         [
             {
-                "keyword": "본문에 나온 핵심 단어",
-                "original_sentence": "본문에서 토씨 하나 안 바꾸고 그대로 복사한 문장 전체",
-                "search_query": "구글 검색용 쿼리",
-                "reason": "검색이 필요한 이유"
+                "keyword": "검증 대상 (한국어로 표기)",
+                "original_sentence": "본문 그대로 복사",
+                "search_query": "최적의 언어로 변환된 쿼리 (예: Robert Liston death date)",
+                "reason": "검증 이유"
             }
         ]
         """
 
         try:
+            # LLM에게 텍스트 전달
             response = self.llm.invoke([
                 SystemMessage(content=prompt),
                 HumanMessage(content=f"Text: {text[:3000]}")
