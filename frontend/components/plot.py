@@ -2,220 +2,90 @@ import streamlit as st
 import uuid
 from components.common import get_current_project
 from components.sidebar import render_sidebar
+# [추가] api에서 함수 가져오기
+from api import save_plot_api
 
 
 def render_plot():
-    # 1. 현재 프로젝트 가져오기
     proj = get_current_project()
     if not proj:
         st.session_state.page = "home"
         st.rerun()
 
-    # 2. 데이터 초기화 (플롯 데이터가 없으면 기본값 생성)
     if "plots" not in proj:
-        proj["plots"] = [{"id": "def", "name": "메인 플롯", "desc": "", "parts": []}]
+        # 기본 플롯 데이터 초기화
+        proj['plots'] = [{"id": "def", "name": "메인 플롯", "desc": "", "parts": []}]
 
-    # 인덱스 안전장치 (삭제 등으로 인덱스가 범위를 벗어났을 경우)
-    if st.session_state.active_plot_idx >= len(proj['plots']):
-        st.session_state.active_plot_idx = 0
-
-    if "selected_block_id" not in st.session_state:
-        st.session_state.selected_block_id = None
-
-    # 3. CSS 적용 (가로 스크롤을 위한 핵심 스타일)
-    st.markdown("""<style>div[data-testid="stVerticalBlockBorderWrapper"] { overflow-x: auto !important; }</style>""",
-                unsafe_allow_html=True)
-
-    # 4. 사이드바 렌더링
+    # 1. 사이드바 렌더링
     render_sidebar(proj)
 
-    # 5. 상단 탭 (플롯 선택)
-    plots = proj['plots']
-    with st.container():
-        cols = st.columns(len(plots) + 1)
-        for i, p in enumerate(plots):
-            with cols[i]:
-                # 현재 선택된 플롯은 primary 색상으로 표시
-                btn_type = "primary" if i == st.session_state.active_plot_idx else "secondary"
-                if st.button(p['name'], key=f"pt_{p['id']}", type=btn_type, use_container_width=True):
-                    st.session_state.active_plot_idx = i
-                    st.rerun()
-
-        # 플롯 추가 버튼
-        with cols[-1]:
-            if st.button("＋", key="add_pl"):
-                proj['plots'].append({"id": str(uuid.uuid4()), "name": "새 플롯", "parts": []})
-                st.session_state.active_plot_idx = len(proj['plots']) - 1
-                st.rerun()
-
+    # 2. 메인 화면 헤더 (플롯 추가 버튼 삭제됨)
+    st.title("🗓️ 플롯 (Plot)")
     st.divider()
 
-    # 현재 활성화된 플롯 데이터
-    curr_plot = plots[st.session_state.active_plot_idx]
+    # 현재 활성화된 플롯 가져오기 (기본값: 첫 번째 플롯)
+    # 추가 기능이 사라졌으므로 사실상 '메인 플롯' 하나만 관리하게 됨
+    current_plot = proj['plots'][0]
 
-    # 6. 플롯 정보 편집 (이름, 삭제, 줄거리)
-    c1, c2 = st.columns([8, 1])
-    with c1:
-        new_pn = st.text_input("플롯 이름", value=curr_plot['name'], key=f"pnn_{curr_plot['id']}",
-                               label_visibility="collapsed")
-        if new_pn != curr_plot['name']:
-            curr_plot['name'] = new_pn
-    with c2:
-        # 플롯이 2개 이상일 때만 삭제 가능
-        if len(plots) > 1 and st.button("🗑", key="del_pl"):
-            proj['plots'].pop(st.session_state.active_plot_idx)
-            st.session_state.active_plot_idx = 0
-            st.rerun()
+    # 3. 플롯 제목 및 전체 줄거리 영역
+    with st.container(border=True):
+        # 플롯 이름 (수정 가능하게 할지, 고정할지 선택. 일단 입력창으로 둠)
+        new_name = st.text_input("플롯 이름", value=current_plot['name'])
+        if new_name != current_plot['name']:
+            current_plot['name'] = new_name
 
-    st.markdown("###### 📜 전체 줄거리")
-    story_k = f"s_{curr_plot['id']}"
-    if 'story' not in curr_plot: curr_plot['story'] = ""
-    new_s = st.text_area("줄거리", value=curr_plot['story'], key=story_k, height=100, label_visibility="collapsed")
-    if new_s != curr_plot['story']:
-        curr_plot['story'] = new_s
+        st.write("")  # 여백
 
-    st.markdown("<br>", unsafe_allow_html=True)
+        # [요청사항] 전체 줄거리 + 저장 버튼
+        # 컬럼을 나누어 제목 옆에 버튼 배치
+        c_label, c_btn = st.columns([8.5, 1.5], vertical_alignment="bottom")
 
-    # 7. 선택된 블록 찾기 (인스펙터 표시용)
-    selected_block = None
-    parent_part = None
-    if st.session_state.selected_block_id:
-        for part in curr_plot['parts']:
-            for block in part['blocks']:
-                if block['id'] == st.session_state.selected_block_id:
-                    selected_block = block
-                    parent_part = part
-                    break
-            if selected_block: break
+        with c_label:
+            st.markdown("### 📜 전체 줄거리")
 
-    # 8. 레이아웃 분할 (보드 vs 인스펙터)
-    if selected_block:
-        main_cols = st.columns([7, 3])
-        col_board_area = main_cols[0]
-        col_inspector = main_cols[1]
-    else:
-        col_board_area = st.container()
-
-    # 9. 보드 영역 (가로 스크롤 되는 파트들)
-    with col_board_area:
-        with st.container(border=True):
-            cols = st.columns(len(curr_plot['parts']) + 1)
-
-            # 각 파트(Part) 렌더링
-            for i, part in enumerate(curr_plot['parts']):
-                with cols[i]:
-                    with st.container(border=True):
-                        # 파트 헤더 (이름 및 메뉴)
-                        h1, h2 = st.columns([4, 1])
-                        with h1:
-                            st.markdown('<div class="ghost-input">', unsafe_allow_html=True)
-                            np = st.text_input(f"pn_{part['id']}", value=part['name'], label_visibility="collapsed")
-                            if np != part['name']: part['name'] = np
-                            st.markdown('</div>', unsafe_allow_html=True)
-                        with h2:
-                            with st.popover("⋮"):
-                                # 왼쪽 이동
-                                if st.button("⬅️", key=f"l_{part['id']}"):
-                                    if i > 0:
-                                        curr_plot['parts'][i], curr_plot['parts'][i - 1] = curr_plot['parts'][i - 1], \
-                                        curr_plot['parts'][i]
-                                        st.rerun()
-                                # 오른쪽 이동
-                                if st.button("➡️", key=f"r_{part['id']}"):
-                                    if i < len(curr_plot['parts']) - 1:
-                                        curr_plot['parts'][i], curr_plot['parts'][i + 1] = curr_plot['parts'][i + 1], \
-                                        curr_plot['parts'][i]
-                                        st.rerun()
-                                # 파트 삭제
-                                if st.button("🗑", key=f"dp_{part['id']}"):
-                                    curr_plot['parts'].remove(part)
-                                    st.rerun()
-
-                        st.markdown("---")
-
-                        # 블록(Block) 리스트 렌더링
-                        for block in part['blocks']:
-                            txt = block['content'] if block['content'] else "내용 없음"
-                            is_sel = (block['id'] == st.session_state.selected_block_id)
-                            # 블록 버튼 (클릭 시 선택됨)
-                            if st.button(txt[:20] + ("..." if len(txt) > 20 else ""), key=f"b_{block['id']}",
-                                         type="primary" if is_sel else "secondary", use_container_width=True):
-                                st.session_state.selected_block_id = block['id']
-                                st.rerun()
-
-                        # 블록 추가 버튼
-                        if st.button("＋ 블록", key=f"ab_{part['id']}"):
-                            part['blocks'].append({"id": str(uuid.uuid4()), "content": ""})
-                            st.rerun()
-
-            # 파트 추가 컬럼 (맨 오른쪽)
-            with cols[-1]:
-                if not st.session_state.is_adding_part:
-                    if st.button("＋ 파트 추가"):
-                        st.session_state.is_adding_part = True
-                        st.rerun()
+        with c_btn:
+            # 저장 버튼 생성
+            if st.button("💾 저장", key="save_plot_desc", use_container_width=True):
+                # 백엔드로 데이터 전송
+                if save_plot_api(current_plot['id'], current_plot['name'], current_plot['desc']):
+                    st.toast("줄거리가 저장되었습니다!", icon="✅")
                 else:
-                    with st.container(border=True):
-                        np_val = st.text_input("새 파트명")
-                        c1, c2 = st.columns(2)
-                        if c1.button("취소"):
-                            st.session_state.is_adding_part = False
-                            st.rerun()
-                        if c2.button("추가"):
-                            curr_plot['parts'].append(
-                                {"id": str(uuid.uuid4()), "name": np_val if np_val else "새 파트", "blocks": []})
-                            st.session_state.is_adding_part = False
-                            st.rerun()
+                    st.toast("저장에 실패했습니다.", icon="🚫")
 
-    # 10. 인스펙터 영역 (오른쪽 패널)
-    if selected_block and 'col_inspector' in locals():
-        with col_inspector:
-            with st.container(border=True):
-                # 헤더
-                h1, h2 = st.columns([1, 8])
-                with h1:
-                    if st.button("✕", key="close_insp"):
-                        st.session_state.selected_block_id = None
-                        st.rerun()
-                with h2:
-                    st.markdown(
-                        f'<div style="color:#888; font-size:13px; margin-top:5px">↳ <b>{parent_part["name"]}</b></div>',
-                        unsafe_allow_html=True)
+        # 줄거리 입력창 (높이 조절)
+        desc = st.text_area(
+            "줄거리 내용",
+            value=current_plot.get('desc', ''),
+            height=200,
+            label_visibility="collapsed",
+            placeholder="이 이야기의 전체적인 흐름이나 시놉시스를 기록하세요."
+        )
 
-                # 옵션 (복제, 삭제)
-                with st.expander("옵션"):
-                    if st.button("복제", use_container_width=True):
-                        new_bk = selected_block.copy()
-                        new_bk['id'] = str(uuid.uuid4())
-                        parent_part['blocks'].insert(parent_part['blocks'].index(selected_block) + 1, new_bk)
-                        st.rerun()
-                    if st.button("삭제", type="primary", use_container_width=True):
-                        parent_part['blocks'].remove(selected_block)
-                        st.session_state.selected_block_id = None
-                        st.rerun()
+        # 입력된 내용 메모리에 반영 (자동 저장 대신 버튼 저장을 원했으므로 여기선 변수만 업데이트)
+        if desc != current_plot.get('desc', ''):
+            current_plot['desc'] = desc
 
-                st.markdown("#### 블록 편집")
+    # 4. 파트(Part) 리스트 영역 (기존 유지)
+    st.subheader("구성 단계 (Parts)")
 
-                # 내용 편집
-                new_content = st.text_area("내용", value=selected_block.get('content', ''), height=200,
-                                           key=f"ed_c_{selected_block['id']}")
-                if new_content != selected_block.get('content', ''):
-                    selected_block['content'] = new_content
+    # 파트 추가 버튼
+    if st.button("＋ 파트 추가"):
+        new_part = {"id": str(uuid.uuid4()), "title": "새 파트", "summary": ""}
+        current_plot['parts'].append(new_part)
+        st.rerun()
 
-                # 등장인물 연결
-                st.caption("등장인물")
-                char_opts = [c['name'] for c in proj.get('characters', [])]
-                current_chars = [c for c in selected_block.get('characters', []) if c in char_opts]
-                new_chars = st.multiselect("인물 선택", options=char_opts, default=current_chars,
-                                           key=f"ed_ch_{selected_block['id']}")
-                if new_chars != current_chars:
-                    selected_block['characters'] = new_chars
+    # 파트 나열
+    for idx, part in enumerate(current_plot['parts']):
+        with st.expander(f"#{idx + 1} {part['title']}", expanded=False):
+            # 파트 제목
+            new_p_title = st.text_input(f"파트 제목 ({idx + 1})", value=part['title'], key=f"p_t_{part['id']}")
+            part['title'] = new_p_title
 
-                # 관련 문서 연결
-                st.caption("관련 문서")
-                doc_opts = [d['title'] for d in proj.get('documents', [])]
-                current_docs = [d for d in selected_block.get('docs', []) if d in doc_opts]
-                new_docs = st.multiselect("문서 선택", options=doc_opts, default=current_docs,
-                                          key=f"ed_doc_{selected_block['id']}")
-                if new_docs != current_docs:
-                    selected_block['docs'] = new_docs
+            # 파트 요약
+            new_p_sum = st.text_area(f"내용 요약 ({idx + 1})", value=part['summary'], key=f"p_s_{part['id']}")
+            part['summary'] = new_p_sum
+
+            # 파트 삭제
+            if st.button("삭제", key=f"del_p_{part['id']}"):
+                current_plot['parts'].remove(part)
+                st.rerun()

@@ -10,24 +10,18 @@ from api import save_document_api, analyze_text_api
 
 
 def render_editor():
-    # 1. 프로젝트 및 문서 가져오기
+    # ... (1~4. 헤더 영역까지 기존 코드와 동일) ...
     proj = get_current_project()
     if not proj:
         st.session_state.page = "home"
         st.rerun()
-
     current_doc = get_current_document(proj)
     quill_key = f"quill_{current_doc['id']}"
-
-    # 2. 사이드바 렌더링
     render_sidebar(proj)
 
-    # 3. 콘텐츠 및 글자 수 로직
     content_raw = st.session_state.get(quill_key)
     content_source = content_raw if content_raw is not None else current_doc.get('content', "")
-
-    if "last_save_time" not in st.session_state:
-        st.session_state.last_save_time = "대기 중"
+    if "last_save_time" not in st.session_state: st.session_state.last_save_time = "대기 중"
 
     def calculate_stats(text):
         if not text: return 0, 0
@@ -37,35 +31,20 @@ def render_editor():
 
     char_total, char_nospace = calculate_stats(content_source)
 
-    # 4. 헤더 영역
-    # [수정] vertical_alignment="bottom"을 줘서 제목과 버튼, 통계의 라인을 맞춤
     c_title, c_stats, c_btn = st.columns([6, 2.5, 1.5], gap="small", vertical_alignment="bottom")
-
     with c_title:
-        # [수정] 회차(1.2) : 제목(8.8) 비율로 나눔 + 하단 정렬
         c_ep, c_txt = st.columns([1.2, 8.8], vertical_alignment="bottom")
-
         with c_ep:
-            # 제목과 동일한 스타일 클래스 적용 (큰 글씨, 투명 배경)
             st.markdown('<div class="doc-title-input">', unsafe_allow_html=True)
-
-            # number_input 대신 text_input 사용 (디자인 통일 위해)
             ep_str = str(current_doc.get('episode_no', 1))
-            new_ep = st.text_input("ep", value=ep_str, key=f"ep_{current_doc['id']}",
-                                   label_visibility="collapsed", placeholder="1")
-
+            new_ep = st.text_input("ep", value=ep_str, key=f"ep_{current_doc['id']}", label_visibility="collapsed",
+                                   placeholder="1")
             if new_ep != ep_str:
-                # 숫자만 입력했는지 확인
                 if new_ep.isdigit():
                     current_doc['episode_no'] = int(new_ep)
                     save_document_api(current_doc['id'], current_doc['title'], content_source)
                     st.rerun()
-                else:
-                    st.toast("회차는 숫자만 입력 가능합니다.", icon="⚠️")
-                    # 잘못된 입력 시 새로고침하여 원상복구
-                    st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
-
         with c_txt:
             st.markdown('<div class="doc-title-input">', unsafe_allow_html=True)
             new_t = st.text_input("t", value=current_doc['title'], key=f"t_{current_doc['id']}",
@@ -77,7 +56,6 @@ def render_editor():
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # 통계 및 상태 표시 영역
     with c_stats:
         stats_placeholder = st.empty()
         stats_placeholder.markdown(f"""
@@ -86,8 +64,7 @@ def render_editor():
                 <span style="font-size:11px; color:#aaa;">(공백제외 {char_nospace:,})</span>
                 <br>
                 <span style="font-size:11px; color:#4CAF50;">✅ {st.session_state.last_save_time} 저장됨</span>
-            </div>
-            """, unsafe_allow_html=True)
+            </div>""", unsafe_allow_html=True)
 
     with c_btn:
         lbl = "✖ 닫기" if st.session_state.show_moneta else "✨ Moneta"
@@ -95,26 +72,56 @@ def render_editor():
             st.session_state.show_moneta = not st.session_state.show_moneta
             st.rerun()
 
-    # 5. Moneta 패널 (기존 유지)
+    # 5. Moneta 패널 (수정됨)
     if st.session_state.show_moneta:
         if "last_opened_expander" not in st.session_state: st.session_state.last_opened_expander = None
         if "sk_analyzed" not in st.session_state: st.session_state.sk_analyzed = False
         if "clio_analyzed" not in st.session_state: st.session_state.clio_analyzed = False
 
-        with st.container(border=True):
-            # [안내 문구] 현재 회차 표시
-            ep_num = current_doc.get('episode_no', 1)
-            st.caption(f"AI 분석 도구를 선택하세요. (현재 분석 대상: {ep_num}화)")
+        # [NEW] 민감도 상태 초기화
+        if "sensitivity_level" not in st.session_state: st.session_state.sensitivity_level = "보통"
 
+        with st.container(border=True):
+            ep_num = current_doc.get('episode_no', 1)
+
+            # [UI] 상단: 안내문구 + 민감도 설정 슬라이더
+            r1_c1, r1_c2 = st.columns([6, 4], vertical_alignment="center")
+            with r1_c1:
+                st.caption(f"현재 분석 대상: **{ep_num}화**")
+            with r1_c2:
+                # select_slider: 텍스트로 선택하지만 로직에선 숫자로 매핑 가능
+                sens_opts = ["낮음", "보통", "높음"]
+                selected_sens = st.select_slider(
+                    "분석 민감도",
+                    options=sens_opts,
+                    value=st.session_state.sensitivity_level,
+                    key="sens_slider",
+                    label_visibility="collapsed"  # 공간 절약을 위해 라벨 숨김
+                )
+                # 상태 저장 (리런 시 유지)
+                st.session_state.sensitivity_level = selected_sens
+
+            # 민감도 텍스트 -> 숫자 변환 매핑
+            sens_map = {"낮음": 2, "보통": 5, "높음": 9}
+            sens_val = sens_map[selected_sens]
+
+            st.divider()  # 구분선 추가
+
+            # [UI] 하단: 버튼들
             col_sk, col_clio = st.columns(2, gap="small")
             current_results = st.session_state.analysis_results.get(current_doc['id'], [])
 
             with col_sk:
-                if st.button("🛡️ 스토리키퍼 (개연성)", use_container_width=True):
+                # 버튼 텍스트에 민감도 표시 (선택적)
+                if st.button(f"🛡️ 스토리키퍼 (민감도: {selected_sens})", use_container_width=True):
                     with st.spinner("분석 중..."):
-                        api_res = analyze_text_api(current_doc['id'], content_source,
-                                                   episode_no=ep_num,
-                                                   modules=["storykeeper"])
+                        api_res = analyze_text_api(
+                            current_doc['id'],
+                            content_source,
+                            episode_no=ep_num,
+                            sensitivity=sens_val,  # [핵심] 민감도 전달
+                            modules=["storykeeper"]
+                        )
                         new_items = [i for i in api_res if i.get('role') == 'logic']
                         filtered = [i for i in current_results if i.get('role') != 'logic']
                         st.session_state.analysis_results[current_doc['id']] = filtered + new_items
@@ -125,9 +132,13 @@ def render_editor():
             with col_clio:
                 if st.button("🏛️ 클리오 (역사 고증)", use_container_width=True):
                     with st.spinner("분석 중..."):
-                        api_res = analyze_text_api(current_doc['id'], content_source,
-                                                   episode_no=ep_num,
-                                                   modules=["clio"])
+                        api_res = analyze_text_api(
+                            current_doc['id'],
+                            content_source,
+                            episode_no=ep_num,
+                            sensitivity=sens_val,
+                            modules=["clio"]
+                        )
                         new_items = [i for i in api_res if i.get('role') == 'story']
                         filtered = [i for i in current_results if i.get('role') != 'story']
                         st.session_state.analysis_results[current_doc['id']] = filtered + new_items
@@ -135,7 +146,7 @@ def render_editor():
                         st.session_state.clio_analyzed = True
                         st.rerun()
 
-        # 결과 표시 (Expander)
+        # 결과 표시 (기존 코드와 동일)
         results = st.session_state.analysis_results.get(current_doc['id'], [])
         sk_msgs = [m for m in results if m.get('role') == 'logic']
         clio_msgs = [m for m in results if m.get('role') == 'story']
@@ -162,9 +173,8 @@ def render_editor():
                 else:
                     st.success("✅ 고증 오류 없음")
 
-    # 6. 에디터 영역
+    # 6. 에디터 영역 (기존과 동일)
     content = st_quill(value=current_doc.get('content', ""), key=quill_key)
-
     if content != current_doc.get('content', ""):
         current_doc['content'] = content
         if save_document_api(current_doc['id'], current_doc['title'], content):
@@ -177,5 +187,4 @@ def render_editor():
                     <span style="font-size:11px; color:#aaa;">(공백제외 {new_nospace:,})</span>
                     <br>
                     <span style="font-size:11px; color:#4CAF50;">✅ {now_str} 저장됨</span>
-                </div>
-                """, unsafe_allow_html=True)
+                </div>""", unsafe_allow_html=True)
