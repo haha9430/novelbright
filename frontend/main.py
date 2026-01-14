@@ -1,28 +1,28 @@
 import sys
 import os
 
-# [핵심] 현재 파일(main.py)이 있는 폴더를 파이썬 경로에 추가
-# 이걸 해줘야 components 폴더 안에서도 api나 common을 잘 찾습니다.
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(current_dir)
+current_dir = os.path.dirname(os.path.abspath(__file__))  # .../PythonProject/frontend
+project_root = os.path.dirname(current_dir)               # .../PythonProject
+
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 import streamlit as st
 import uuid
 
-# [수정됨] 불필요한 'from api import save_document' 삭제함
-# 필요한 컴포넌트들만 불러옵니다.
 from components.home import render_home
 from components.editor import render_editor
 from components.characters import render_characters
 from components.plot import render_plot
 from components.materials import render_materials
 
-# =========================================================
-# 1. 설정 및 CSS
-# =========================================================
 st.set_page_config(page_title="Moneta Studio", page_icon="✍️", layout="wide", initial_sidebar_state="expanded")
 
-st.markdown("""
+st.markdown(
+    """
 <style>
     .stApp { background-color: #FDFBF7; }
     .stQuill { background-color: #FFFFFF !important; border: 1px solid #EAE4DC !important; border-radius: 4px !important; padding: 20px !important; box-shadow: 0 2px 8px rgba(0,0,0,0.02) !important; }
@@ -43,26 +43,31 @@ st.markdown("""
     div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"] { width: max-content !important; min-width: 100%; }
     div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"] { width: 300px !important; min-width: 300px !important; flex: 0 0 300px !important; margin-right: 12px; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# =========================================================
-# 2. 상태 초기화
-# =========================================================
-if "page" not in st.session_state: st.session_state.page = "home"
-if "show_moneta" not in st.session_state: st.session_state.show_moneta = False
-if "current_project_id" not in st.session_state: st.session_state.current_project_id = None
-if "analysis_results" not in st.session_state: st.session_state.analysis_results = {}
-if "current_doc_id" not in st.session_state: st.session_state.current_doc_id = None
+if "page" not in st.session_state:
+    st.session_state.page = "home"
+if "show_moneta" not in st.session_state:
+    st.session_state.show_moneta = False
+if "current_project_id" not in st.session_state:
+    st.session_state.current_project_id = None
+if "analysis_results" not in st.session_state:
+    st.session_state.analysis_results = {}
+if "current_doc_id" not in st.session_state:
+    st.session_state.current_doc_id = None
 
-# 플롯 상태
-if "active_plot_idx" not in st.session_state: st.session_state.active_plot_idx = 0
-if "selected_block_id" not in st.session_state: st.session_state.selected_block_id = None
-if "is_adding_part" not in st.session_state: st.session_state.is_adding_part = False
+if "active_plot_idx" not in st.session_state:
+    st.session_state.active_plot_idx = 0
+if "selected_block_id" not in st.session_state:
+    st.session_state.selected_block_id = None
+if "is_adding_part" not in st.session_state:
+    st.session_state.is_adding_part = False
 
-# 자료실 상태
-if "selected_material_id" not in st.session_state: st.session_state.selected_material_id = None
+if "selected_material_id" not in st.session_state:
+    st.session_state.selected_material_id = None
 
-# 더미 데이터 (백엔드 연결 전용)
 if "projects" not in st.session_state:
     st.session_state.projects = [
         {
@@ -73,14 +78,12 @@ if "projects" not in st.session_state:
             "last_edited": "방금 전",
             "characters": [],
             "materials": [],
-            "documents": [{"id": "doc1", "title": "프롤로그", "content": "<p>눈을 떠보니...</p>"}],
-            "plots": [{"id": "def", "name": "메인 플롯", "desc": "기본 플롯", "parts": []}]
+            "documents": [{"id": "doc1", "title": "프롤로그", "content": "<p>눈을 떠보니...</p>", "episode_no": 1}],
+            "plots": [{"id": "def", "name": "메인 플롯", "desc": "기본 플롯", "parts": []}],
+            "world": {"id": "world", "name": "세계관", "desc": "", "parts": []},
         }
     ]
 
-# =========================================================
-# 3. Main Routing
-# =========================================================
 if st.session_state.page == "home":
     render_home()
 elif st.session_state.page == "editor":

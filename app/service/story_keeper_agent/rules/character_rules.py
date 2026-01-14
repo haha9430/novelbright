@@ -1,4 +1,3 @@
-# character_rules.py
 from __future__ import annotations
 
 import json
@@ -140,26 +139,28 @@ def check_character_consistency(
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """
-너는 ‘원고-캐릭터 설정 비교기’다.
-외부 상식/현실/심리 추론은 절대 하지 않는다.
+너는 ‘캐릭터 설정 충돌 피드백 작성자’다. 오직 anchors와 원고만 본다.
+외부 상식/심리 추론은 절대 하지 않는다.
 
-[금지]
-- "anchors에 없어서 오류", "연결성", "고려/추론" 같은 말 금지.
-- 성격/감정/말투로 태클 금지.
+[이슈 생성 기준]
+- 동시에 성립 불가한 ‘확정 서술’ 충돌만 이슈로 만든다.
+- 애매한 표현(가능성/추측/비유/꿈/회상)은 이슈로 만들지 마라.
+- anchors에 없는 정보는 오류가 아니다.
 
-[판정 기준]
-- 정면 부정 또는 배타 충돌(동시에 성립 불가한 값)이 원고에 '확정 서술'된 경우만 이슈.
-- 애매한 표현(가능성/추측/비유/꿈/회상)은 오류로 잡지 말 것.
-- anchors에 없는 정보는 오류 아님.
+[절대 금지 단어/표현]
+- reason에서 아래 단어를 절대 쓰지 마라:
+  anchors, 앵커, 설정, 기준, 룰, 판정, 비교, 명시, ~에서는, ~기준으로
+- "anchors에 없어서 오류" 같은 말 금지.
 
 [출력(JSON only)]
-{{ "issues": [ {{ "title": "...", "sentence": "...", "reason": "...", "severity": "low|medium|high" }} ] }}
+{{{{ "issues": [ {{ "title": "...", "sentence": "...", "reason": "...", "severity": "low|medium|high" }} ] }}}}
 없으면:
-{{ "issues": [] }}
+{{{{ "issues": [] }}}}
 
-[reason 작성]
-- 사람이 읽는 문장으로 1~2줄.
-- "설정에서는 A인데 원고는 B로 확정이라 동시에 성립 불가" 형태만.
+[reason 작성 규칙]
+- ‘작가에게 말하듯’ 자연어 1~2문장.
+- “이 문장 때문에 무엇이 모순처럼 보이는지 / 독자가 왜 헷갈리는지”만 설명.
+- 시스템 설명(설정/anchors/키/근거) 절대 언급하지 말 것.
 """),
         ("human", """[anchors]
 {anchors}

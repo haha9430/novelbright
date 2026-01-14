@@ -105,7 +105,6 @@ def _plot_value_anchors(plot_config: Dict[str, Any]) -> List[str]:
     if not isinstance(plot_config, dict):
         return anchors
 
-    # plot.json에 있는 텍스트들을 앵커로 폭넓게 수집 (장르 상관없이)
     for k in (
         "summary",
         "important_parts",
@@ -171,35 +170,30 @@ def check_plot_consistency(
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """
-너는 ‘원고-플롯/연속성 비교기’다.
+너는 ‘원고-플롯/연속성 충돌 피드백 작성자’다.
 외부 상식/현실/역사/고증 판단은 절대 하지 않는다.
-오직 anchors에 있는 문장과 원고 문장의 '정면 부정/배타 충돌'만 뽑는다.
+오직 anchors(확정 사실 문장)와 원고의 ‘정면 부정/배타 충돌’만 뽑는다.
 
-[필수 규칙]
-- 이슈를 만들 때, 어떤 anchor 문장과 충돌인지 anchor_sentence에 anchors에서 '그대로' 복붙해라.
-- sentence는 원고에서 '그대로' 복붙해라.
-- anchor_sentence가 anchors에 없으면 이슈를 만들지 마라.
-- sentence가 원고에 없으면 이슈를 만들지 마라.
-- 애매한 표현(가능/추측/비유/꿈/회상)은 제외.
-- 캐릭터의 직업과 특징과 상황을 확실하게 이해하라
-- 기존 시간 순서를 유지한 채, 이동/도착/대기 등 중간 단계가 상세화되어 추가된 경우는
-  시간선 충돌이나 연속성 오류로 간주하지 마라.
-- 의식이 끊김/깨어남, 장면 전환, 시간 점프(서술 생략), 회상/요약처럼
-  ‘서술 방식’으로 인해 중간 장면이 추가되거나 생략되는 것은 시간적 순서 오류로 보지 마라.
-  명시적으로 “앞뒤가 뒤바뀌었다/동시에 발생했다”처럼 배타 충돌이 확정된 경우에만 오류로 판단한다.
-- 여러 경력이나 이력이
-  모두 완료된 상태로만 중요하고, 선후 관계가 플롯의 핵심 갈등이나
-  설정 충돌로 명시되지 않는 경우에는 시간 순서 오류로 판단하지 마라.
-  (즉, ‘A를 먼저 했는지 B를 먼저 했는지’가 중요하지 않다면 오류가 아니다.)
-- 고증/현실 정확도(의학/법률/역사/과학 등)나 용어의 정확성/표현의 정밀도 차이는 오류로 판단하지 마라.
-  -- 회귀/전생/빙의와 같은 사건에서는
-  ‘의식이 끊어지는 순간’을 회귀 시점으로 간주한다.
-  회귀 이후의 장면에서 나타나는 상태 변화(예: 아기가 됨, 다른 장소에서 깨어남,
-  누군가에게 안겨 있거나 묶여 있는 상태 등)는
-  회귀 직후 세계의 연속 묘사로 보며,
-  이를 회귀 이전에 끼어든 중간 과정이나 시간선 충돌로 판단하지 마라.
+[이슈 생성 기준]
+- 동시에 성립할 수 없는 ‘확정 서술’ 충돌만 이슈로 만든다.
+- 애매한 표현(가능/추측/비유/꿈/회상/과장)은 제외.
+- anchors에 없는 정보는 오류가 아니다.
 
+[중요: anchor_sentence 필드]
+- anchor_sentence는 검증을 위해 필요하니 반드시 채워라.
+- 단, reason에서는 anchor_sentence/anchors를 절대 언급하지 마라.
 
+[절대 금지 단어/표현]
+- reason에서 아래 단어를 절대 쓰지 마라:
+  anchors, 앵커, 설정, 기준, 룰, 판정, 비교, 명시, ~에서는, ~기준으로
+- "anchors에 없어서 오류" 같은 말 금지.
+
+[시간선 관련 규칙]
+- 기존 시간 순서를 유지한 채 이동/도착/대기 등 중간 단계가 상세화되어 추가된 경우는 오류로 보지 마라.
+- 의식이 끊김/깨어남, 장면 전환, 시간 점프(서술 생략), 회상/요약 같은 ‘서술 방식’ 차이는 오류로 보지 마라.
+- “앞뒤가 뒤바뀌었다/동시에 발생했다”처럼 배타 충돌이 확정된 경우만 오류.
+- 회귀/전생/빙의에서는 ‘의식이 끊어지는 순간’을 회귀 시점으로 간주한다.
+  회귀 이후 상태 변화(아기가 됨/다른 장소/안겨있음/묶여있음)는 회귀 직후 연속 묘사로 보고 시간선 오류로 잡지 마라.
 
 [출력(JSON only)]
 {{{{ "issues": [ {{{{
@@ -212,6 +206,11 @@ def check_plot_consistency(
 }}}} ] }}}}
 없으면:
 {{{{ "issues": [] }}}}
+
+[reason 작성 규칙]
+- ‘작가에게 말하듯’ 자연어 1~2문장.
+- “이 문장 때문에 무엇이 모순처럼 보이는지 / 독자가 왜 헷갈리는지”만 설명.
+- 시스템 설명(설정/anchors/키/근거/anchor_sentence) 절대 언급하지 말 것.
 """),
         ("human", """[anchors]
 {anchors}
@@ -246,7 +245,7 @@ def check_plot_consistency(
         if not isinstance(it, dict):
             continue
 
-        # 1) anchor 검증 (장르필터 아님, 근거필터임)
+        # 1) anchor 검증 (근거 필터)
         anchor_hint = str(it.get("anchor_sentence") or "").strip()
         anchor_norm = pick_best_anchor(anchors, anchor_hint)
         if not anchor_norm or anchor_norm not in anchors:
@@ -270,8 +269,6 @@ def check_plot_consistency(
         if t not in ("plot", "continuity"):
             t = "plot"
 
-        # title이 이상하게 '나이'로 가도 상관없음
-        # 진짜 중요한 건 anchor_sentence + sentence 근거가 통과했냐임
         out.append(Issue(
             type=t,
             title=str(it.get("title") or "플롯/연속성 충돌"),

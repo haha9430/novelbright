@@ -1,3 +1,4 @@
+# api.py
 import sys
 import os
 import json
@@ -5,7 +6,7 @@ import inspect
 
 sys.path.insert(0, os.getcwd())
 
-from fastapi import APIRouter, HTTPException, Body, Form
+from fastapi import APIRouter, HTTPException, Body, Form, Query
 from pydantic import ValidationError
 
 from app.service.story_keeper_agent.ingest_episode import (
@@ -96,18 +97,8 @@ def _call_upsert_character(name: str, text: str):
         params = sig.parameters
 
         text_keys = [
-            "text",
-            "content",
-            "profile",
-            "description",
-            "setting",
-            "settings",
-            "raw",
-            "data",
-            "prompt",
-            "value",
-            "info",
-            "bio",
+            "text", "content", "profile", "description", "setting", "settings",
+            "raw", "data", "prompt", "value", "info", "bio",
         ]
 
         kwargs = {}
@@ -137,9 +128,6 @@ def _call_upsert_character(name: str, text: str):
         raise
 
 
-# =========================
-# 1) World/Plot Setting
-# =========================
 @router.post(
     "/world_setting",
     summary="World/Plot Setting",
@@ -149,9 +137,6 @@ def world_setting(text: str = Body(..., media_type="text/plain")):
     return manager.update_global_settings(text)
 
 
-# =========================
-# 2) Character Setting
-# =========================
 @router.post(
     "/character_setting",
     summary="Character Setting",
@@ -164,9 +149,6 @@ def character_setting(name: str = Form(...), text: str = Form(...)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# =========================
-# 3) Manuscript Feedback
-# =========================
 @router.post(
     "/manuscript_feedback",
     summary="Manuscript Feedback",
@@ -174,8 +156,8 @@ def character_setting(name: str = Form(...), text: str = Form(...)):
 )
 def manuscript_feedback(
     episode_no: int,
-    severity: str = "medium",
     text: str = Body(..., media_type="text/plain"),
+    debug_raw: bool = Query(False, description="디버그 정보를 포함할지"),
 ):
     try:
         full_text_str = text or ""
@@ -204,25 +186,35 @@ def manuscript_feedback(
             character_config=character_config,
             plot_config=plot_config,
             story_state=story_state,
-            severity_threshold=severity,
         )
 
         if not issues:
-            return {
+            base = {
                 "episode_no": episode_no,
                 "message": "수정할 사안이 없습니다!",
                 "issues": [],
             }
+        else:
+            base = {
+                "episode_no": episode_no,
+                "issues": issues,
+            }
 
-        return {
-            "episode_no": episode_no,
-            "issues": issues,
-        }
+        if debug_raw:
+            base["debug"] = {
+                "full_text_len": len(full_text_str),
+                "plot_loaded": bool(plot_config),
+                "world_loaded": bool(world),
+                "history_loaded": bool(history),
+                "character_count": len(character_config.get("characters", [])) if isinstance(character_config, dict) else 0,
+                "issues_count": len(issues) if isinstance(issues, list) else 0,
+            }
+
+        return base
 
     except ValidationError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         import traceback
-
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))

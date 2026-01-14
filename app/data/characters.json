@@ -1,7 +1,7 @@
 {
     "김태평": {
         "name": "김태평",
-        "age_gender": "남자",
+        "age_gender": "none",
         "job_status": "외상외과의, 외과의, 일반외과, 의사, 전임 조교수",
         "core_traits": [
             "21세기 한국 출신으로 19세기 영국에서 조선인으로 다시 태어남",
@@ -42,70 +42,5 @@
         "relationships": [
             "리스턴: 동료/협업 인물(본문 기반)"
         ]
-    },
-    "조지프 리스터": {
-        "name": "조지프 리스터",
-        "age_gender": "none",
-        "job_status": "의사",
-        "core_traits": "none",
-        "personality": {
-            "pros": "none",
-            "cons": "none"
-        },
-        "outer_goal": "none",
-        "inner_goal": "none",
-        "trauma_weakness": "none",
-        "speech_habit": "none",
-        "relationships": [
-            "지역 유지: 인종차별 시대에 후원자"
-        ]
-    },
-    "엘프리드": {
-        "name": "엘프리드",
-        "age_gender": "none",
-        "job_status": "none",
-        "core_traits": "none",
-        "personality": {
-            "pros": "none",
-            "cons": "none"
-        },
-        "outer_goal": "none",
-        "inner_goal": "none",
-        "trauma_weakness": "none",
-        "speech_habit": "none",
-        "relationships": "none"
-    },
-    "콜린": {
-        "name": "콜린",
-        "age_gender": "none",
-        "job_status": "의사, 교수, 면허",
-        "core_traits": "none",
-        "personality": {
-            "pros": "none",
-            "cons": "none"
-        },
-        "outer_goal": "none",
-        "inner_goal": "none",
-        "trauma_weakness": "none",
-        "speech_habit": "none",
-        "relationships": [
-            "리스턴: 동료/협업 인물(본문 기반)"
-        ]
-    },
-    "존 스노우": {
-        "name": "존 스노우",
-        "age_gender": "none",
-        "job_status": "의대",
-        "core_traits": "none",
-        "personality": {
-            "pros": "none",
-            "cons": "none"
-        },
-        "outer_goal": "none",
-        "inner_goal": "none",
-        "trauma_weakness": "none",
-        "speech_habit": "none",
-        "relationships": "none"
-    },
-
+    }
 }

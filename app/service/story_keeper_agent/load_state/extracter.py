@@ -1,297 +1,279 @@
-# app/service/story_keeper_agent/load_state/extracter.py
-import os
+from __future__ import annotations
+
 import json
-from typing import Any, Dict
-from datetime import datetime
+import os
+import re
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from langchain_upstage import ChatUpstage
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
 
-load_dotenv()
+
+def _project_root() -> Path:
+    # app/service/story_keeper_agent/load_state/extracter.py -> 프로젝트 루트
+    return Path(__file__).resolve().parents[4]
+
+
+def _read_json(path: Path, default: Any):
+    if not path.exists():
+        return default
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def _write_json(path: Path, data: Any) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        # 여기서 예외를 다시 올리면 파이프라인이 터지니까, 호출부에서 잡게끔 raise 유지
+        raise e
+
+
+def _extract_explicit_genre(text: str) -> List[str]:
+    """
+    장르 자동추론 X
+    '장르:' / 'genre:' 처럼 사용자가 명시한 것만 추출
+    """
+    if not isinstance(text, str):
+        return []
+    m = re.search(r"(장르|genre)\s*[:：]\s*(.+)", text, flags=re.IGNORECASE)
+    if not m:
+        return []
+    raw = m.group(2).strip()
+    parts = re.split(r"[,/|·\s]+", raw)
+    out: List[str] = []
+    for p in parts:
+        p = p.strip()
+        if p and p not in out:
+            out.append(p)
+    return out[:10]
 
 
 class PlotManager:
+    """
+    (친구 코드 기반) plot.json / story_history.json 관리 + LLM 요약/팩트추출
+    - 절대경로 제거: 프로젝트 루트 기준으로 경로 자동 설정
+    """
+
     def __init__(self):
-        # SSL_CERT_FILE 깨졌을 때만 certifi로 복구
         self._fix_ssl_cert_env()
 
-        self.llm = ChatUpstage(model="solar-pro")
-        self.parser = JsonOutputParser()
+        # .env는 루트에 있으면 로드 (없어도 에러 X)
+        try:
+            env_path = _project_root() / ".env"
+            if env_path.exists():
+                load_dotenv(str(env_path))
+        except Exception:
+            pass
 
-        # load_state 폴더
-        self.data_dir = os.path.dirname(os.path.abspath(__file__))
+        try:
+            self.llm = ChatUpstage(model="solar-pro")
+        except Exception:
+            self.llm = None
 
-        # 프로젝트 루트 기준 app/data/plot.json
-        project_root = os.path.abspath(os.path.join(self.data_dir, "../../../../"))
-        self.global_setting_file = os.path.join(project_root, "app", "data", "plot.json")
-
-        # 히스토리는 load_state 폴더에 저장
-        self.history_file = os.path.join(self.data_dir, "story_history.json")
+        root = _project_root()
+        self.global_setting_file = root / "app" / "data" / "plot.json"
+        self.characters_file = root / "app" / "data" / "characters.json"
+        self.history_file = root / "app" / "service" / "story_keeper_agent" / "load_state" / "story_history.json"
 
         print(f"📂 plot.json: {self.global_setting_file}")
         print(f"📂 story_history.json: {self.history_file}")
 
     def _fix_ssl_cert_env(self) -> None:
-        """
-        Windows에서 SSL_CERT_FILE이 깨져있으면 httpx가 터질 수 있어서 certifi로 교체.
-        """
         try:
             import certifi
 
             cafile = certifi.where()
-            env_path = os.environ.get("SSL_CERT_FILE", "").strip()
-
-            if (not env_path) or (env_path and not os.path.exists(env_path)):
-                os.environ["SSL_CERT_FILE"] = cafile
-
-            if not os.environ.get("REQUESTS_CA_BUNDLE", "").strip():
-                os.environ["REQUESTS_CA_BUNDLE"] = os.environ["SSL_CERT_FILE"]
-            if not os.environ.get("CURL_CA_BUNDLE", "").strip():
-                os.environ["CURL_CA_BUNDLE"] = os.environ["SSL_CERT_FILE"]
-
-        except Exception:
-            # 없어도 서버 안 죽게
-            pass
-
-    def _backup_broken_json(self, path: str):
-        try:
-            if not os.path.exists(path):
-                return
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = f"{path}.broken_{ts}.json"
-            os.replace(path, backup_path)
-            print(f"⚠️ 깨진 JSON 백업: {backup_path}")
+            os.environ["SSL_CERT_FILE"] = cafile
+            os.environ["REQUESTS_CA_BUNDLE"] = cafile
+            os.environ["CURL_CA_BUNDLE"] = cafile
         except Exception:
             pass
 
-    def _read_json(self, path: str, default: Any):
-        if not os.path.exists(path):
-            return default
+    # --------------------------------------------------------------------------
+    # 강력 JSON 파싱
+    # --------------------------------------------------------------------------
+    def _safe_json(self, raw: str) -> Dict[str, Any]:
+        if not raw:
+            return {}
+        raw = raw.strip()
+
+        raw = re.sub(r"^```(?:json)?", "", raw, flags=re.IGNORECASE).strip()
+        raw = re.sub(r"```$", "", raw).strip()
+
+        m = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+        if not m:
+            return {}
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            self._backup_broken_json(path)
-            return default
+            return json.loads(m.group(0))
         except Exception:
-            return default
-
-    def _write_json(self, path: str, data: Any):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+            return {}
 
     # =========================
-    # 세계관 설정 저장(정리 + 장르 + 중요포인트)
-    # =========================
-    def update_global_settings(self, setting_text: str):
-        existing_settings = self._read_json(self.global_setting_file, default={})
-        if not isinstance(existing_settings, dict):
-            existing_settings = {}
-
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    """당신은 웹소설 '세계관 관리자'입니다.
-입력된 세계관을 '요약'이 아니라 '정리'에 가깝게 구조화해서 저장합니다.
-
-중요:
-- 원고(회차 내용)나 사건 전개/대사 같은 에피소드성 내용은 저장하지 마세요.
-- 세계관/작품 전제/장르/핵심 설정만 남기세요.
-- 너무 짧게 줄이지 말고, 읽으면 작품 전제가 이해되게 정리하세요. 단, 없는 사실을 판단해서 만들지 마세요.
-
-반환은 반드시 JSON만.
-출력 JSON 키는 정확히 아래 3개만 사용:
-1) summary: 세계관 정리(여러 문장/항목형 가능). 거의 요약하지 말고 정리 느낌으로.
-2) genre: AI가 판단한 장르 1~2개 (예: 대체역사, 의학, 회귀 등)
-3) important_parts: 고증/설정 불일치 방지 위해 반드시 지켜야 할 핵심 포인트 5~10개 (문장 리스트)
-
-[기존 저장된 세계관(있으면 참고)]
-{existing_settings}
-""",
-                ),
-                ("human", "세계관 설정 입력:\n{input}"),
-            ]
-        )
-
-        chain = prompt | self.llm | self.parser
-        result = chain.invoke(
-            {
-                "input": setting_text,
-                "existing_settings": json.dumps(existing_settings, ensure_ascii=False),
-            }
-        )
-
-        if not isinstance(result, dict):
-            result = {}
-
-        summary = str(result.get("summary", "") or "")
-        genre = str(result.get("genre", "") or "")
-        important_parts = result.get("important_parts", [])
-        if not isinstance(important_parts, list):
-            important_parts = []
-
-        cleaned = {
-            "summary": summary,
-            "genre": genre,
-            "important_parts": [str(x) for x in important_parts if str(x).strip()],
-        }
-
-        self._write_json(self.global_setting_file, cleaned)
-
-        return {
-            "status": "success",
-            "message": "세계관(plot.json) 저장 완료",
-            "data": cleaned,
-        }
-
-    # =========================
-    # full_text 요약 -> story_history.json 저장
-    # (episode_no, title, summary, story_flow)
+    # 1) 원고 요약 및 저장 (친구 함수명 유지)
     # =========================
     def summarize_and_save(self, episode_no: int, full_text: str) -> Dict[str, Any]:
-        if not isinstance(episode_no, int) or episode_no < 1:
-            return {"status": "error", "message": "episode_no는 1 이상의 정수여야 합니다."}
         if not isinstance(full_text, str) or not full_text.strip():
-            return {"status": "error", "message": "full_text가 비어있습니다."}
+            return {"status": "error", "message": "empty text"}
 
-        history_data = self._read_json(self.history_file, default={})
-        if not isinstance(history_data, dict):
-            history_data = {}
+        history_data = _read_json(self.history_file, default={})
+        prev_flow = history_data.get(str(int(episode_no) - 1), {}).get("story_flow", "")
 
-        prev_flow = ""
-        if str(episode_no - 1) in history_data and isinstance(history_data[str(episode_no - 1)], dict):
-            prev_flow = str(history_data[str(episode_no - 1)].get("story_flow", ""))
+        # LLM 없으면 fallback
+        if self.llm is None:
+            result = {
+                "title": f"{episode_no}화",
+                "summary": (full_text.strip()[:300] + "...") if len(full_text.strip()) > 300 else full_text.strip(),
+                "story_flow": prev_flow,
+            }
+        else:
+            prompt = f"""
+너는 웹소설 편집자다.
+아래 원고를 요약하여 JSON으로 반환하라.
 
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    """당신은 웹소설 편집자입니다.
-목표는 '회차 간 흐름을 관리하기 위한 요약 기록'을 만드는 것입니다.
+[규칙]
+1) 출력은 오직 JSON만
+2) 키는 "title", "summary", "story_flow" (3개 고정)
+3) 언어: 한국어
+4) story_flow는 "이전 흐름"을 참고하되, 현재 화 내용 기준으로 자연스럽게 갱신
 
-주의:
-- 설정 오류, 떡밥, 문제점은 작성하지 마세요.
-- 디테일한 문장 표현은 생략하세요.
-- 오직 '무슨 일이 일어났는지'와 '이 화의 역할'만 작성합니다.
+[입력]
+이전 흐름: {prev_flow}
 
-반환은 반드시 JSON만.
-출력 JSON 키는 정확히 아래 3개만 사용:
-1) title: 이번 화를 대표하는 회차 제목(짧고 명확하게)
-2) summary: 이번 화 핵심 사건 요약(3~4문장)
-3) story_flow: 전체 이야기에서 이 화의 역할(1문장)
-
-[이전 화 흐름]
-{prev_flow}
-""",
-                ),
-                ("human", "이번 화 원고:\n{input}"),
-            ]
-        )
-
-        try:
-            result = (prompt | self.llm | self.parser).invoke({"input": full_text, "prev_flow": prev_flow})
-            if not isinstance(result, dict):
+원고:
+{full_text[:3500]}
+"""
+            try:
+                res = self.llm.invoke(prompt)
+                raw = getattr(res, "content", str(res))
+                result = self._safe_json(raw) or {}
+            except Exception:
                 result = {}
 
-            history_data[str(episode_no)] = {
-                "episode_no": episode_no,
-                "title": str(result.get("title", "") or ""),
-                "summary": str(result.get("summary", "") or ""),
-                "story_flow": str(result.get("story_flow", "") or ""),
-            }
+            if not result:
+                result = {
+                    "title": f"{episode_no}화 (자동)",
+                    "summary": "요약 생성 실패 (원문 확인 필요)",
+                    "story_flow": prev_flow or "정보 없음",
+                }
 
-            self._write_json(self.history_file, history_data)
+        history_data[str(int(episode_no))] = {
+            "episode_no": int(episode_no),
+            "title": str(result.get("title", "")),
+            "summary": str(result.get("summary", "")),
+            "story_flow": str(result.get("story_flow", "")),
+        }
 
-            return {
-                "status": "success",
-                "message": "story_history.json 요약 저장 완료",
-                "data": history_data[str(episode_no)],
-            }
+        try:
+            _write_json(self.history_file, history_data)
+            return {"status": "success", "data": history_data[str(int(episode_no))]}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
     # =========================
-    # full_text -> episode_facts 추출 (rules 엔진 입력용)
+    # 2) 팩트 추출 (extract_facts)
     # =========================
     def extract_facts(self, episode_no: int, full_text: str, story_state: Dict[str, Any]) -> Dict[str, Any]:
-        if not isinstance(episode_no, int) or episode_no < 1:
-            return {"episode_no": episode_no, "events": [], "characters": [], "state_changes": {}}
-        if not isinstance(full_text, str) or not full_text.strip():
-            return {"episode_no": episode_no, "events": [], "characters": [], "state_changes": {}}
+        if self.llm is None:
+            return {"episode_no": int(episode_no), "events": [], "characters": [], "state_changes": {}}
 
-        global_settings = self._read_json(self.global_setting_file, default={})
-        if not isinstance(global_settings, dict):
-            global_settings = {}
+        prompt = f"""
+Extract facts for consistency check.
+Return ONLY JSON.
+Keys: "events", "characters", "state_changes".
 
-        history_data = self._read_json(self.history_file, default={})
-        if not isinstance(history_data, dict):
-            history_data = {}
-
-        prev_summary = ""
-        if str(episode_no - 1) in history_data and isinstance(history_data[str(episode_no - 1)], dict):
-            prev_summary = str(history_data[str(episode_no - 1)].get("summary", ""))
-
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    """당신은 웹소설 편집 보조 AI입니다.
-이번 화 원고에서 '규칙 엔진이 검사할 수 있는' 사실들을 구조화하세요.
-
-규칙:
-- evidence에는 가능하면 원문 일부를 짧게 넣기
-- events는 사건(행동/발생/사용/이동 등)
-- characters는 인물별 행동(actions)과 선택(decisions)
-- state_changes는 다음 화로 이어질 상태 변화
-
-[세계관/설정(plot.json)]
-{global_settings}
-
-[이전 요약]
-{prev_summary}
-
-[현재 누적 상태(story_state)]
-{story_state}
-
-반환은 반드시 JSON만.
-출력 JSON 구조(키 이름은 고정):
-- episode_no: int
-- events: list
-- characters: list
-- state_changes: dict
-""",
-                ),
-                ("human", "이번 화 원고:\n{input}"),
-            ]
-        )
-
+Input:
+{full_text[:3500]}
+"""
         try:
-            result = (prompt | self.llm | self.parser).invoke(
-                {
-                    "input": full_text,
-                    "global_settings": json.dumps(global_settings, ensure_ascii=False),
-                    "prev_summary": prev_summary,
-                    "story_state": json.dumps(story_state, ensure_ascii=False),
-                }
-            )
-
-            if not isinstance(result, dict):
-                return {"episode_no": episode_no, "events": [], "characters": [], "state_changes": {}}
-
-            result.setdefault("episode_no", episode_no)
-
-            if not isinstance(result.get("events"), list):
-                result["events"] = []
-            if not isinstance(result.get("characters"), list):
-                result["characters"] = []
-            if not isinstance(result.get("state_changes"), dict):
-                result["state_changes"] = {}
-
+            res = self.llm.invoke(prompt)
+            raw = getattr(res, "content", str(res))
+            result = self._safe_json(raw) or {}
+            if not result:
+                return {"episode_no": int(episode_no), "events": [], "characters": [], "state_changes": {}}
+            result["episode_no"] = int(episode_no)
             return result
         except Exception:
-            return {"episode_no": episode_no, "events": [], "characters": [], "state_changes": {}}
+            return {"episode_no": int(episode_no), "events": [], "characters": [], "state_changes": {}}
+
+    # =========================
+    # 3) 세계관 저장 (update_global_settings)
+    # - genre는 "명시된 것만" 원칙 반영
+    # =========================
+    def update_global_settings(self, text: str) -> Dict[str, Any]:
+        if not isinstance(text, str) or not text.strip():
+            return {"status": "error", "message": "empty text"}
+
+        # LLM 없으면 프론트처럼 간단 저장
+        if self.llm is None:
+            summary_lines = [ln.strip() for ln in text.splitlines() if ln.strip()][:5]
+            data = {
+                "summary": summary_lines if summary_lines else [text.strip()[:180]],
+                "genre": _extract_explicit_genre(text),
+                "important_parts": summary_lines[:12],
+            }
+            try:
+                _write_json(self.global_setting_file, data)
+                return {"status": "success", "data": data}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+
+        prompt = f"""
+너는 웹소설 편집자다. 아래 세계관 설정을 정리해서 JSON으로 반환하라.
+
+[규칙]
+1) 출력은 JSON만
+2) 키: "summary", "genre", "important_parts"
+3) genre는 "원문에 명시된 것(예: '장르: ...')"만 넣고, 추측/자동추론 금지
+4) summary/important_parts는 원문에서 근거가 드러나게 간단히 정리
+
+[입력]
+{text[:6000]}
+"""
+        try:
+            res = self.llm.invoke(prompt)
+            raw = getattr(res, "content", str(res))
+            data = self._safe_json(raw) or {}
+
+            # genre 강제 보정: LLM이 추론했더라도 명시된 것만 유지
+            data["genre"] = _extract_explicit_genre(text)
+
+            if "summary" not in data or not isinstance(data.get("summary"), list):
+                # summary가 문자열이면 리스트로
+                s = data.get("summary")
+                if isinstance(s, str) and s.strip():
+                    data["summary"] = [s.strip()]
+                else:
+                    data["summary"] = []
+
+            if "important_parts" not in data or not isinstance(data.get("important_parts"), list):
+                ip = data.get("important_parts")
+                if isinstance(ip, str) and ip.strip():
+                    data["important_parts"] = [ip.strip()]
+                else:
+                    data["important_parts"] = []
+
+            _write_json(self.global_setting_file, data)
+            return {"status": "success", "data": data}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+
+class StoryHistoryManager:
+    """
+    ✅ 너 프론트(api.py)가 기대하는 인터페이스 제공
+    - summarize_and_save_episode(episode_no, full_text)
+    """
+
+    def __init__(self):
+        self.pm = PlotManager()
+
+    def summarize_and_save_episode(self, *, episode_no: int, full_text: str) -> Dict[str, Any]:
+        return self.pm.summarize_and_save(int(episode_no), full_text)
