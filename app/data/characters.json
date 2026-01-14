@@ -1,7 +1,7 @@
 {
     "김태평": {
         "name": "김태평",
-        "age_gender": "남자",
+        "age_gender": "none",
         "job_status": "외상외과의, 외과의, 일반외과, 의사, 전임 조교수",
         "core_traits": [
             "21세기 한국 출신으로 19세기 영국에서 조선인으로 다시 태어남",
@@ -22,5 +22,80 @@
             "나이팅게일: 크림 전쟁 야전병원 체계 구축 협업",
             "지역 유지: 인종차별 시대에 후원자"
         ]
+    },
+    "이도훈": {
+        "name": "이도훈",
+        "age_gender": "none",
+        "job_status": "none",
+        "core_traits": "none",
+        "personality": {
+            "pros": "none",
+            "cons": "none"
+        },
+        "outer_goal": "none",
+        "inner_goal": "none",
+        "trauma_weakness": "none",
+        "speech_habit": "none",
+        "relationships": "none"
+    },
+    "발터 모델": {
+        "name": "발터 모델",
+        "age_gender": "none",
+        "job_status": "none",
+        "core_traits": "none",
+        "personality": {
+            "pros": "none",
+            "cons": "none"
+        },
+        "outer_goal": "none",
+        "inner_goal": "none",
+        "trauma_weakness": "none",
+        "speech_habit": "none",
+        "relationships": "none"
+    },
+    "알브레히트 폰 뷔르템베르크": {
+        "name": "알브레히트 폰 뷔르템베르크",
+        "age_gender": "none",
+        "job_status": "none",
+        "core_traits": "none",
+        "personality": {
+            "pros": "none",
+            "cons": "none"
+        },
+        "outer_goal": "none",
+        "inner_goal": "none",
+        "trauma_weakness": "none",
+        "speech_habit": "none",
+        "relationships": "none"
+    },
+    "더글러스 헤이그": {
+        "name": "더글러스 헤이그",
+        "age_gender": "none",
+        "job_status": "none",
+        "core_traits": "none",
+        "personality": {
+            "pros": "none",
+            "cons": "none"
+        },
+        "outer_goal": "none",
+        "inner_goal": "none",
+        "trauma_weakness": "none",
+        "speech_habit": "none",
+        "relationships": "none"
+    },
+    "페르디낭 포슈": {
+        "name": "페르디낭 포슈",
+        "age_gender": "none",
+        "job_status": "none",
+        "core_traits": "none",
+        "personality": {
+            "pros": "none",
+            "cons": "none"
+        },
+        "outer_goal": "none",
+        "inner_goal": "none",
+        "trauma_weakness": "none",
+        "speech_habit": "none",
+        "relationships": "none"
     }
 }

@@ -2,12 +2,34 @@ import streamlit as st
 from streamlit_quill import st_quill
 from bs4 import BeautifulSoup
 import datetime
+import textwrap
 
 # 컴포넌트 및 API 불러오기
 from components.common import get_current_project, get_current_document
 from components.sidebar import render_sidebar
-from api import save_document_api, analyze_text_api, analyze_clio_api
+from api import analyze_clio_api, analyze_text_api, save_document_api, save_story_history_api
 
+def _strip_html_to_text(html: str) -> str:
+    if not isinstance(html, str):
+        return ""
+    soup = BeautifulSoup(html, "html.parser")
+    return soup.get_text()
+
+
+def _short(text: str, n: int = 220) -> str:
+    t = (text or "").strip()
+    if len(t) <= n:
+        return t
+    return t[:n].rstrip() + "..."
+
+
+def _sev_style(sev: str):
+    sev = (sev or "medium").strip().lower()
+    if sev == "high":
+        return {"border": "#FF4B4B", "bg": "#FFF5F5", "icon": "🚨"}
+    if sev == "low":
+        return {"border": "#4CAF50", "bg": "#F0FFF4", "icon": "✅"}
+    return {"border": "#FFA500", "bg": "#FFFAEB", "icon": "⚠️"}
 
 def render_editor():
     # ... (1~4. 헤더 영역까지 기존 코드와 동일) ...
@@ -15,12 +37,15 @@ def render_editor():
     if not proj:
         st.session_state.page = "home"
         st.rerun()
+
     current_doc = get_current_document(proj)
     quill_key = f"quill_{current_doc['id']}"
+
     render_sidebar(proj)
 
     content_raw = st.session_state.get(quill_key)
     content_source = content_raw if content_raw is not None else current_doc.get('content', "")
+
     if "last_save_time" not in st.session_state: st.session_state.last_save_time = "대기 중"
 
     def calculate_stats(text):
@@ -32,8 +57,10 @@ def render_editor():
     char_total, char_nospace = calculate_stats(content_source)
 
     c_title, c_stats, c_btn = st.columns([6, 2.5, 1.5], gap="small", vertical_alignment="bottom")
+
     with c_title:
         c_ep, c_txt = st.columns([1.2, 8.8], vertical_alignment="bottom")
+
         with c_ep:
             st.markdown('<div class="doc-title-input">', unsafe_allow_html=True)
             ep_str = str(current_doc.get('episode_no', 1))
@@ -44,7 +71,11 @@ def render_editor():
                     current_doc['episode_no'] = int(new_ep)
                     save_document_api(current_doc['id'], current_doc['title'], content_source)
                     st.rerun()
+                else:
+                    st.toast("회차는 숫자만 입력 가능합니다.", icon="⚠️")
+                    st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
+
         with c_txt:
             st.markdown('<div class="doc-title-input">', unsafe_allow_html=True)
             new_t = st.text_input("t", value=current_doc['title'], key=f"t_{current_doc['id']}",
@@ -73,108 +104,193 @@ def render_editor():
             st.rerun()
 
     # 5. Moneta 패널 (수정됨)
-    if st.session_state.show_moneta:
+    if st.session_state.get("show_moneta", False):
         if "last_opened_expander" not in st.session_state: st.session_state.last_opened_expander = None
         if "sk_analyzed" not in st.session_state: st.session_state.sk_analyzed = False
         if "clio_analyzed" not in st.session_state: st.session_state.clio_analyzed = False
-
-        # [NEW] 민감도 상태 초기화
-        if "sensitivity_level" not in st.session_state: st.session_state.sensitivity_level = "보통"
+        if "analysis_results" not in st.session_state: st.session_state.analysis_results = {}
 
         with st.container(border=True):
-            ep_num = current_doc.get('episode_no', 1)
+            ep_num = current_doc.get("episode_no", 1)
 
-            # [UI] 상단: 안내문구 + 민감도 설정 슬라이더
-            r1_c1, r1_c2 = st.columns([6, 4], vertical_alignment="center")
-            with r1_c1:
-                st.caption(f"현재 분석 대상: **{ep_num}화**")
-            with r1_c2:
-                # select_slider: 텍스트로 선택하지만 로직에선 숫자로 매핑 가능
-                sens_opts = ["낮음", "보통", "높음"]
-                selected_sens = st.select_slider(
-                    "분석 민감도",
-                    options=sens_opts,
-                    value=st.session_state.sensitivity_level,
-                    key="sens_slider",
-                    label_visibility="collapsed"  # 공간 절약을 위해 라벨 숨김
-                )
-                # 상태 저장 (리런 시 유지)
-                st.session_state.sensitivity_level = selected_sens
+            # ✅ (현재 분석 대상: n화) 문구 제거
+            # st.caption(f"AI 분석 도구를 선택하세요. (현재 분석 대상: {ep_num}화)")
 
-            # 민감도 텍스트 -> 숫자 변환 매핑
-            sens_map = {"낮음": 2, "보통": 5, "높음": 9}
-            sens_val = sens_map[selected_sens]
+            severity_option = st.selectbox(
+                "분석 민감도(Severity)",
+                options=["high", "medium", "low"],
+                index=0,
+                key="moneta_severity_select",
+                help="선택한 등급으로 분류된 항목만 보여줍니다.",
+            )
 
-            st.divider()  # 구분선 추가
-
-            # [UI] 하단: 버튼들
-            col_sk, col_clio = st.columns(2, gap="small")
-            current_results = st.session_state.analysis_results.get(current_doc['id'], [])
+            col_sk, col_clio = st.columns([1, 1], gap="small")
 
             with col_sk:
-                # 버튼 텍스트에 민감도 표시 (선택적)
-                if st.button(f"🛡️ 스토리키퍼 (민감도: {selected_sens})", use_container_width=True):
-                    with st.spinner("분석 중..."):
+                if st.button("🛡️ 스토리키퍼 (개연성)", use_container_width=True):
+                    with st.spinner("스토리키퍼가 원고를 분석 중입니다..."):
                         api_res = analyze_text_api(
-                            current_doc['id'],
+                            current_doc["id"],
                             content_source,
                             episode_no=ep_num,
-                            sensitivity=sens_val,  # [핵심] 민감도 전달
-                            modules=["storykeeper"]
+                            severity=severity_option,
                         )
-                        new_items = [i for i in api_res if i.get('role') == 'logic']
-                        filtered = [i for i in current_results if i.get('role') != 'logic']
-                        st.session_state.analysis_results[current_doc['id']] = filtered + new_items
-                        st.session_state.last_opened_expander = "storykeeper"
+
+                        current_data = st.session_state.analysis_results.get(current_doc["id"])
+
+                        if current_data is None or not isinstance(current_data, dict):
+                            st.session_state.analysis_results[current_doc["id"]] = {}
+
+                        st.session_state.analysis_results[current_doc["id"]]['sk'] = api_res
                         st.session_state.sk_analyzed = True
                         st.rerun()
 
             with col_clio:
                 if st.button("🏛️ 클리오 (역사 고증)", use_container_width=True):
                     with st.spinner("분석 중..."):
-                        st.session_state.analysis_results[current_doc['id']] = analyze_clio_api(current_doc, content_source)
+                        api_res = analyze_clio_api(current_doc, content_source)
+
+                        current_data = st.session_state.analysis_results.get(current_doc["id"])
+
+                        if current_data is None or not isinstance(current_data, dict):
+                            st.session_state.analysis_results[current_doc["id"]] = {}
+
+                        st.session_state.analysis_results[current_doc['id']]['clio'] = api_res
                         #new_items = [i for i in api_res if i.get('role') == 'story']
                         #filtered = [i for i in current_results if i.get('role') != 'story']
                         #st.session_state.analysis_results[current_doc['id']] = filtered + new_items
+
                         st.session_state.last_opened_expander = "clio"
                         st.session_state.clio_analyzed = True
                         st.rerun()
 
-        # 결과 표시 (기존 코드와 동일)
-        #results = st.session_state.analysis_results.get(current_doc['id'], [])
-        #sk_msgs = [m for m in results if m.get('role') == 'logic']
-        #clio_msgs = [m for m in results if m.get('role') == 'story']
-        '''
+        results = st.session_state.analysis_results.get(current_doc['id'], [])
+
+        # ✅ 같은 severity만 표시
+        target_list = []
+        if isinstance(results, dict):
+            # 클리오: 딕셔너리 안에 있는 'historical_context' 리스트를 사용
+            target_list = results.get("historical_context", [])
+        elif isinstance(results, list):
+            # 스토리 키퍼: 리스트 자체를 사용
+            target_list = results
+
+        filtered_results = []
+
+        # ---------------------------------------------------------
+        # [수정됨] 저장된 결과 가져오기 (꾸러미에서 각각 꺼내기)
+        # ---------------------------------------------------------
+        doc_data = st.session_state.analysis_results.get(current_doc['id'], {})
+
+        # 1. 스토리키퍼 결과 (리스트)
+        sk_results = doc_data.get("sk", [])
+        if not isinstance(sk_results, list): sk_results = []
+
+        # 2. 클리오 결과 (딕셔너리)
+        clio_results = doc_data.get("clio", {})
+        if not isinstance(clio_results, dict): clio_results = {}
+
+        # ---------------------------------------------------------
+        # [수정됨] 스토리키퍼용 필터링 로직 (sk_results만 사용)
+        # ---------------------------------------------------------
+        filtered_sk_results = []
+        for m in sk_results:
+            if not isinstance(m, dict): continue
+
+            # severity 필터링
+            item_sev = str(m.get("severity", "medium")).strip().lower()
+            if item_sev == severity_option:
+                filtered_sk_results.append(m)
+
+        # 이제 target_list는 무조건 '리스트'이므로 안전하게 돌릴 수 있습니다.
+        for m in target_list:
+            if not isinstance(m, dict): continue  # 안전장치
+
+            # severity가 없는 경우(클리오)를 대비해 기본값 처리
+            item_sev = str(m.get("severity", "medium")).strip().lower()
+
+            # 클리오는 severity 필터링 없이 다 보여주거나, 필요하면 로직 추가
+            # 여기서는 편의상 필터를 통과시키거나 'medium'으로 간주
+            if item_sev == severity_option or isinstance(results, dict):
+                filtered_results.append(m)
+
+        doc_results = st.session_state.analysis_results.get(current_doc['id'], {})
+        sk_results = doc_results.get("sk", [])      # 스토리키퍼 결과
+        clio_results = doc_results.get("clio", {})  # 클리오 결과
+
+        # 1. 🛡️ 스토리키퍼 결과 표시
         if st.session_state.sk_analyzed:
-            label = f"🛡️ 스토리키퍼 결과 ({len(sk_msgs)})" if sk_msgs else "🛡️ 스토리키퍼 (발견된 오류 없음)"
-            with st.expander(label, expanded=(st.session_state.last_opened_expander == "storykeeper")):
-                if sk_msgs:
-                    for m in sk_msgs:
-                        st.markdown(
-                            f"""<div class="moneta-card" style="background:#F0F8FF; border-left:4px solid #0277BD"><b>{m.get('msg')}</b><br><span style="font-size:13px; color:#555">💡 제안: {m.get('fix')}</span></div>""",
-                            unsafe_allow_html=True)
+            label = f"🛡️ 스토리키퍼 결과 ({len(filtered_sk_results)}건)"
+            # 데이터가 있는데 필터링 결과가 0건이면 안내 메시지
+            if not filtered_sk_results and sk_results:
+                label = f"🛡️ 스토리키퍼 (선택 등급 '{severity_option}' 항목 없음)"
+
+            with st.expander(label, expanded=True):
+                if not sk_results:
+                    st.info("분석된 결과가 없습니다. 버튼을 눌러 분석을 시작하세요.")
+                elif not filtered_sk_results:
+                    st.success(f"✅ '{severity_option}' 등급으로 감지된 개연성 오류가 없습니다.")
                 else:
-                    st.success("✅ 설정 충돌 없음")
-        '''
+                    for m in filtered_sk_results:
+                        sev = str(m.get("severity", "medium")).strip().lower()
+                        style = _sev_style(sev)
+
+                        type_label = (m.get("type_label") or "오류").strip()
+                        title = (m.get("title") or "설정 충돌").strip()
+                        header_title = f"{style['icon']} {type_label} - {title}"
+
+                        sentence = (m.get("sentence") or "").strip()
+                        sentence_preview = _short(sentence, 260) if sentence else "(원문 문장 없음)"
+                        reason = (m.get("reason") or "").strip() or "피드백 없음"
+
+                        # ✅ location(몇화-몇줄) UI 표시 제거 (아예 안 씀)
+                        html = f"""
+        <div style="border-left: 5px solid {style['border']};
+                    background-color: {style['bg']};
+                    padding: 14px 16px;
+                    margin-bottom: 14px;
+                    border-radius: 10px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+
+          <div style="font-weight: 800; font-size: 15px; color: {style['border']}; margin-bottom: 6px;">
+            {header_title}
+          </div>
+
+          <div style="font-size: 15px; font-weight: 600; color: #222; line-height: 1.65; margin-bottom: 10px;">
+            “{sentence_preview}”
+          </div>
+
+          <div style="background:#fff;
+                      border: 1px solid rgba(0,0,0,0.08);
+                      padding: 10px 12px;
+                      border-radius: 10px;
+                      font-size: 13px;
+                      color:#444;
+                      line-height: 1.7;">
+            <strong>💡 피드백</strong><br/>
+            {reason}
+          </div>
+        </div>
+        """
+                        st.markdown(textwrap.dedent(html).strip(), unsafe_allow_html=True)
         if st.session_state.clio_analyzed:
-            # 분석 결과 표시
-            result_data = st.session_state.analysis_results.get(current_doc['id'], {})
-
-            #label = f"🏛️ 클리오 결과 ({len(clio_msgs)})" if clio_msgs else "🏛️ 클리오 (발견된 오류 없음)"
+            # 여기서는 clio_results를 사용해야 합니다! (doc_data 아님)
             label = f"🏛️ 클리오 결과"
-            with st.expander(label, expanded=(st.session_state.last_opened_expander == "clio")):
-                # 데이터가 비어있지 않고, 우리가 기대하는 구조(dict)인지 확인
-                if result_data and isinstance(result_data, dict):
 
-                    # 1. 요약 정보 표시
-                    analysis = result_data.get("analysis_result", {})
-                    found_count = analysis.get("found_entities_count", 0)
+            with st.expander(label, expanded=(st.session_state.last_opened_expander == "clio")):
+                if clio_results:
+
+                    found_count = clio_results.get("found_entities_count", 0)
+                    history_items = clio_results.get("historical_context", [])
+
+                    if "analysis_result" in clio_results:
+                        inner = clio_results["analysis_result"]
+                        if isinstance(inner, dict):
+                            found_count = inner.get("found_entities_count", found_count)
+                            history_items = inner.get("historical_context", history_items)
 
                     st.divider()
-                    st.subheader(f"📊 분석 결과 리포트 ({found_count}건 감지)")
-
-                    # 2. 역사적 검증 (Historical Context) 리스트 순회
-                    history_items = analysis.get("historical_context", [])
+                    st.subheader(f"📊 분석 결과 리포트 ({len(history_items)}건 감지)")
 
                     if not history_items:
                         st.info("검출된 역사적 특이사항이 없습니다.")

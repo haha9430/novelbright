@@ -2,8 +2,15 @@ import sys
 import os
 
 # 현재 파일(main.py)이 있는 폴더를 파이썬 경로에 추가
-current_dir = os.path.dirname(os.path.abspath(__file__))
+current_dir = os.path.dirname(os.path.abspath(__file__))  # .../PythonProject/frontend
+project_root = os.path.dirname(current_dir)               # .../PythonProject
 sys.path.append(current_dir)
+
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 import streamlit as st
 import uuid
@@ -18,6 +25,32 @@ from components.materials import render_materials
 # 1. 설정 및 상태 초기화
 # =========================================================
 st.set_page_config(page_title="Moneta Studio", page_icon="✍️", layout="wide", initial_sidebar_state="expanded")
+
+st.markdown(
+    """
+<style>
+    .stApp { background-color: #FDFBF7; }
+    .stQuill { background-color: #FFFFFF !important; border: 1px solid #EAE4DC !important; border-radius: 4px !important; padding: 20px !important; box-shadow: 0 2px 8px rgba(0,0,0,0.02) !important; }
+    div[data-testid="stModal"] textarea { padding: 10px 15px !important; font-family: sans-serif; font-size: 14px; }
+    div[data-testid="stButton"] button { border-radius: 6px !important; border: 1px solid #E0D8D0 !important; background-color: white !important; color: #5D4037 !important; transition: all 0.2s; }
+    div[data-testid="stButton"] button:hover { background-color: #FAF5F0 !important; border-color: #BCAAA4 !important; }
+    div[data-testid="stButton"] button[kind="primary"] { background-color: #8D6E63 !important; color: white !important; border: none !important; }
+    div[data-testid="stButton"] button[kind="primary"]:hover { background-color: #6D4C41 !important; }
+    section[data-testid="stSidebar"] { background-color: #F9F8F6 !important; }
+    section[data-testid="stSidebar"] div[data-testid="stButton"] button { background-color: transparent !important; border: none !important; text-align: left !important; padding-left: 8px !important; box-shadow: none !important; color: #555555 !important; }
+    section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover { background-color: #EBEBEB !important; color: #000000 !important; font-weight: 500 !important; }
+    .doc-title-input input { font-family: 'KoPub Batang', serif; font-size: 34px !important; font-weight: 700 !important; color: #333 !important; background-color: transparent !important; border: none !important; padding: 0px !important; }
+    .doc-title-input input:focus { box-shadow: none !important; }
+    .ghost-input input { background: transparent !important; border: none !important; font-weight: bold; color: #333; }
+    .ghost-input input:focus { background: #f9f9f9 !important; border-bottom: 2px solid #FF6B6B !important; }
+    .moneta-card { padding: 15px; border-radius: 8px; background: white; border: 1px solid #eee; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+    div[data-testid="stVerticalBlockBorderWrapper"] { border: none !important; padding: 0px !important; overflow-x: auto !important; }
+    div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div[data-testid="stHorizontalBlock"] { width: max-content !important; min-width: 100%; }
+    div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"] { width: 300px !important; min-width: 300px !important; flex: 0 0 300px !important; margin-right: 12px; }
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
 if "page" not in st.session_state: st.session_state.page = "home"
 if "show_moneta" not in st.session_state: st.session_state.show_moneta = False
