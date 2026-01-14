@@ -1,6 +1,5 @@
 import streamlit as st
-from frontend.api import analyze_text
-
+from api import analyze_text
 
 def render_moneta_panel(current_doc, content_source):
     """모네타(AI 분석) 패널 렌더링"""

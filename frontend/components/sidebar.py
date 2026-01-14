@@ -1,67 +1,43 @@
-
-
+# frontend/components/sidebar.py
 import streamlit as st
-from frontend.api import get_projects, create_project, get_documents, create_document
+import uuid
+from components.common import search_modal, rename_document_modal
 
-
-def render_sidebar():
-    """사이드바 렌더링 및 선택된 프로젝트/문서 반환"""
-    selected_project = None
-    selected_document = None
-
+def render_sidebar(current_proj):
     with st.sidebar:
-        st.header("📂 프로젝트")
+        if st.button("🏠 홈으로", use_container_width=True): st.session_state.page = "home"; st.rerun()
+        st.markdown(f"## {current_proj['title']}")
+        if st.button("🔍 검색하기", use_container_width=True): search_modal(current_proj)
 
-        # 1. 프로젝트 목록 로드
-        projects = get_projects()
-        opts = {p['id']: p['name'] for p in projects}
+        st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
+        if st.button("👤  등장인물", use_container_width=True): st.session_state.page = "characters"; st.rerun()
+        if st.button("📅  플롯", use_container_width=True): st.session_state.page = "plot"; st.rerun()
+        if st.button("📚  자료실", use_container_width=True): st.session_state.page = "materials"; st.rerun()
 
-        # 세션 상태 초기화
-        if "current_project_id" not in st.session_state and projects:
-            st.session_state.current_project_id = projects[0]['id']
+        st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
+        c1, c2 = st.columns([8, 2])
+        c1.caption("문서")
+        if c2.button("➕", key="add_doc"):
+            new_doc = {"id": str(uuid.uuid4()), "title": "새 문서", "content": ""}
+            current_proj['documents'].append(new_doc)
+            st.session_state.current_doc_id = new_doc['id']
+            st.session_state.page = "editor"
+            st.rerun()
 
-        # 프로젝트 선택 박스
-        pid = st.selectbox(
-            "내 프로젝트",
-            options=list(opts.keys()),
-            format_func=lambda x: opts[x],
-            key="sb_project_select",
-            index=0 if not projects else list(opts.keys()).index(
-                st.session_state.get('current_project_id', projects[0]['id']))
-        )
-
-        if pid:
-            st.session_state.current_project_id = pid
-            selected_project = next((p for p in projects if p['id'] == pid), None)
-
-        # 프로젝트 생성 UI
-        with st.expander("➕ 새 프로젝트"):
-            new_p_name = st.text_input("프로젝트 명")
-            if st.button("생성", key="btn_create_proj"):
-                if create_project(new_p_name, ""):
-                    st.rerun()
-
-        st.divider()
-
-        # 2. 문서 목록 로드
-        if selected_project:
-            st.subheader(f"📄 {selected_project['name']} 문서")
-            docs = get_documents(selected_project['id'])
-
-            # 문서 리스트 출력
-            for doc in docs:
-                btn_bg = "★" if st.session_state.get("current_doc_id") == doc['id'] else " "
-                if st.button(f"{btn_bg} {doc['title']}", key=f"btn_doc_{doc['id']}", use_container_width=True):
+        if "documents" not in current_proj: current_proj['documents'] = []
+        for doc in current_proj['documents']:
+            is_active = (doc['id'] == st.session_state.current_doc_id) and (st.session_state.page == "editor")
+            btn_type = "primary" if is_active else "secondary"
+            c_doc, c_opt = st.columns([8.5, 1.5], gap="small")
+            with c_doc:
+                if st.button(f"📄 {doc['title']}", key=f"d_{doc['id']}", type=btn_type, use_container_width=True):
                     st.session_state.current_doc_id = doc['id']
+                    st.session_state.page = "editor"
                     st.rerun()
-
-            # 현재 선택된 문서 객체 찾기
-            if st.session_state.get("current_doc_id"):
-                selected_document = next((d for d in docs if d['id'] == st.session_state.current_doc_id), None)
-
-            # 문서 생성 UI
-            if st.button("➕ 새 문서 만들기", use_container_width=True):
-                create_document(selected_project['id'], "새 문서")
-                st.rerun()
-
-    return selected_project, selected_document
+            with c_opt:
+                with st.popover("⋮"):
+                    if st.button("이름 변경", key=f"ren_{doc['id']}"): rename_document_modal(doc)
+                    if st.button("삭제", key=f"del_{doc['id']}"):
+                        current_proj['documents'].remove(doc)
+                        if st.session_state.current_doc_id == doc['id']: st.session_state.current_doc_id = None
+                        st.rerun()
