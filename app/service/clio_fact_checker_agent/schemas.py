@@ -43,3 +43,8 @@ class HistoryOut(BaseModel):
 class ManuscriptInput(BaseModel):
     title: str
     content: str
+
+class HistoryUpsertRequest(BaseModel):
+    id: str             # 프론트에서 생성한 UUID
+    title: str          # 제목
+    content: str        # 내용

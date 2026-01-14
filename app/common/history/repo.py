@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 import difflib  # <--- [중요] 이 줄이 꼭 추가되어야 합니다!
+import json
+import os
 
 from .schema import HistoricalEntity, RelatedEntity
 from .storage import read_json, write_json_atomic
@@ -242,3 +244,119 @@ def delete_entity(db_path: str, entity_id: str, auto_sync: bool = True) -> bool:
         _sync_vector_db(db_path)
 
     return True
+
+def upsert_material(db_path: str, new_material_data: dict):
+    """
+    ID를 기준으로 기존 데이터가 있으면 교체(Update), 없으면 추가(Insert)
+    """
+    # 1. 파일 로드 (없으면 빈 리스트 생성)
+    # ---------------------------------------------------------
+    try:
+        with open(db_path, "r", encoding="utf-8") as f:
+            all_materials = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        all_materials = []
+
+    # 2. 탐색: 이미 존재하는 자료인지 ID로 확인
+    # ---------------------------------------------------------
+    target_idx = -1
+    for i, item in enumerate(all_materials):
+        if item["id"] == new_material_data["id"]:
+            target_idx = i
+            break
+
+    # 3. 데이터 무결성 보완
+    # ---------------------------------------------------------
+    # 만약 기존 데이터가 있는데, 새 데이터에 'linked_entity_ids'가 누락되었다면?
+    # 실수로 링크 정보가 날아가는 것을 방지하기 위해 기존 값을 유지하는 로직이 필요할 수 있습니다.
+    if target_idx >= 0:
+        existing_data = all_materials[target_idx]
+
+        # 새 데이터에 linked_entity_ids가 없으면, 기존 걸 그대로 씁니다.
+        if "linked_entity_ids" not in new_material_data:
+            new_material_data["linked_entity_ids"] = existing_data.get("linked_entity_ids", [])
+
+        # created_at도 보통은 처음에 만든 날짜를 유지합니다.
+        if "created_at" not in new_material_data:
+            new_material_data["created_at"] = existing_data.get("created_at")
+
+    # 4. 저장 실행 (Upsert)
+    # ---------------------------------------------------------
+    if target_idx >= 0:
+        # [Update] 교체
+        all_materials[target_idx] = new_material_data
+        action = "updated"
+    else:
+        # [Insert] 추가
+        all_materials.append(new_material_data)
+        action = "created"
+
+    # 5. 파일 쓰기
+    # ---------------------------------------------------------
+    with open(db_path, "w", encoding="utf-8") as f:
+        # ensure_ascii=False: 한글 깨짐 방지
+        # indent=4: 사람이 보기 좋게 줄바꿈
+        json.dump(all_materials, f, ensure_ascii=False, indent=4)
+
+    print(f"💾 Material {action}: {new_material_data.get('title', 'No Title')}")
+    return new_material_data
+
+def get_material(db_path: str, material_id: str) -> Optional[Dict[str, Any]]:
+    """
+        [기능] material_db.json에서 특정 ID의 자료를 찾아서 반환합니다.
+        [리턴] 찾으면 dict 객체, 없으면 None
+    """
+    # 1. 파일이 존재하는지 먼저 확인 (없으면 찾을 것도 없음)
+    if not os.path.exists(db_path):
+        return None
+
+    try:
+        # 2. 파일 읽기
+        with open(db_path, "r", encoding="utf-8") as f:
+            materials = json.load(f)
+
+        # 3. 리스트를 순회하며 ID 비교 (Linear Search)
+        for item in materials:
+            if item.get("id") == material_id:
+                return item
+
+        # 4. 끝까지 돌았는데 없으면 None 반환
+        return None
+
+    except json.JSONDecodeError:
+        # 파일은 있는데 내용이 깨져있거나 빈 파일일 경우
+        return None
+    except Exception as e:
+        print(f"❌ Material 조회 중 오류 발생: {e}")
+        return None
+
+def delete_material(db_path: str, material_id: str) -> bool:
+    """
+    [기능] material_db.json에서 해당 ID의 자료를 제거합니다.
+    """
+    if not os.path.exists(db_path):
+        return False
+
+    try:
+        # 1. 로드
+        with open(db_path, "r", encoding="utf-8") as f:
+            materials = json.load(f)
+
+        # 2. 필터링 (삭제할 ID를 뺀 나머지 리스트 생성)
+        # 리스트 컴프리헨션으로 해당 ID가 아닌 것만 남깁니다.
+        new_materials = [m for m in materials if m["id"] != material_id]
+
+        # 삭제된 게 없으면(길이가 같으면) False
+        if len(materials) == len(new_materials):
+            return False
+
+        # 3. 저장
+        with open(db_path, "w", encoding="utf-8") as f:
+            json.dump(new_materials, f, ensure_ascii=False, indent=4)
+
+        print(f"🗑️ Material 삭제 완료: {material_id}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Material 삭제 중 오류: {e}")
+        return False

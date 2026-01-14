@@ -479,13 +479,14 @@ def render_materials():
                 c1.caption("자료 상세 편집")
                 if c2.button("🗑", key=f"del_m_{sel_mat['id']}"):
                     try:
-                        requests.delete(f"http://127.0.0.1:8000/materials/{sel_mat['id']}")
+                        requests.delete(f"http://127.0.0.1:8000/history/material/{sel_mat['id']}")
                         proj['materials'].remove(sel_mat)
                         st.session_state.selected_material_id = None
                         st.toast("삭제됨")
                         st.rerun()
-                    except:
+                    except Exception as e:
                         st.error("삭제 실패 (서버 연결 확인)")
+                        st.exception(e)
 
                 new_t = st.text_input("제목", value=sel_mat['title'])
                 if new_t != sel_mat['title']: sel_mat['title'] = new_t
@@ -502,8 +503,14 @@ def render_materials():
 
                 st.divider()
                 if st.button("💾 저장하기", type="primary", use_container_width=True):
+                    material_payload = {
+                        "id": sel_mat['id'],
+                        "title": sel_mat['title'],
+                        "content": sel_mat['content']
+                    }
+
                     try:
-                        requests.post("http://127.0.0.1:8000/materials/save", json=sel_mat)
+                        requests.post("http://127.0.0.1:8000/history/upsert", json=material_payload)
                         st.toast("저장 완료!", icon="✅")
                     except:
                         st.error("저장 실패 (서버 연결 확인)")

@@ -8,13 +8,14 @@ from app.common.history import repo as history_repo
 from app.common.history import vector_store
 
 # Schemas (필요한 경우 common schemas를 쓰거나 현재 패키지의 schemas 사용)
-from .schemas import HistoryOut, HistoryCreate, HistoryUpdate, IngestRequest
+from .schemas import HistoryOut, HistoryCreate, HistoryUpdate, IngestRequest, HistoryUpsertRequest
 
 from app.service.history.solar_client import HistoryLLMClient
 
 router = APIRouter(prefix="/history", tags=["History Manager"])
 
 HISTORY_DB_PATH = "app/data/history_db.json" # 경로 확인 필요
+MATERIAL_DB_PATH = "app/data/material_db.json"
 
 from pydantic import BaseModel
 
@@ -355,3 +356,142 @@ def api_ingest_history_text(payload: IngestRequest):
         "summary": f"총 {len(commands)}건 중 {success_count}건 처리 완료",
         "details": results
     }
+
+# ---------------------------------------------------------------
+# 현재 사용하는 API 2개
+# ---------------------------------------------------------------
+
+@router.post("/upsert", tags=["History"])
+async def upsert_history(payload: HistoryUpsertRequest):
+    """
+        [AI Upsert]
+        1. 자료(Material) 원본 저장
+        2. 기존에 이 자료와 연결된 Entity들 삭제 (초기화)
+        3. LLM으로 새 Entity 추출 및 저장
+        4. Material <-> Entity 연결 정보 갱신
+    """
+    print(f"📥 [Material Upsert] title: {payload.title}, id: {payload.id}")
+
+    # 1. 기존 데이터 확인 (수정 모드일 경우)
+    # 기존에 연결되어 있던 엔티티들을 알아내기 위해 Material을 먼저 조회합니다.
+    old_material = history_repo.get_material(MATERIAL_DB_PATH, payload.id) # (구현 필요)
+
+    if old_material:
+        old_entity_ids = old_material.get("linked_entity_ids", [])
+        if old_entity_ids:
+            print(f"🧹 기존 엔티티 {len(old_entity_ids)}건 삭제 중...")
+            for ent_id in old_entity_ids:
+                # 벡터 DB와 JSON DB에서 삭제
+                history_repo.delete_entity(HISTORY_DB_PATH, ent_id, auto_sync=False)
+
+    client = HistoryLLMClient()
+    try:
+        commands = client.parse_history_command(payload.content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM analysis failed: {str(e)}")
+
+    results = []
+    success_count = 0
+
+    # 1. 반복문 시작
+    for cmd in commands:
+        suggested_action = cmd.get("action", "create")
+        target_name = cmd.get("target", {}).get("name")
+
+        final_action = suggested_action
+
+        log_item = {"name": target_name, "action": final_action, "status": "pending"}
+
+        try:
+            raw_payload = cmd.get("payload", {})
+            normalized_payload = _normalize_ingest_payload(raw_payload)
+
+            if final_action == "create":
+                # [중요] auto_sync=False로 설정하여 매번 동기화 방지
+                saved_entity = history_repo.create_entity(HISTORY_DB_PATH, normalized_payload, auto_sync=False)
+
+                log_item.update({
+                    "status": "success",
+                    "id": saved_entity["id"],
+                    "message": "새로 생성됨",
+                    "result_data": saved_entity
+                })
+                success_count += 1
+
+        except Exception as e:
+            log_item.update({"status": "error", "message": str(e)})
+            print(f"⚠️ 처리 실패 ({target_name}): {e}")
+
+        # [중요] 처리 결과 기록은 반복문 안에서!
+        results.append(log_item)
+
+    # 3. 새 엔티티 저장 및 ID 수집
+    new_linked_ids = []
+
+    for item in results:
+        # 성공한 작업이고, ID가 존재하는 경우에만 리스트에 추가
+        if item.get("status") == "success" and item.get("id"):
+            new_linked_ids.append(item["id"])
+
+        # 4. 벡터 DB 동기화 (한 번에)
+    if success_count > 0: # 또는 if new_linked_ids:
+        print("🔄 [API] 일괄 변경 완료. 벡터 DB 동기화를 수행합니다...")
+        try:
+            history_repo.force_sync_vector_db(HISTORY_DB_PATH)
+        except Exception as e:
+            print(f"⚠️ 벡터 DB 동기화 중 오류 발생: {e}")
+
+        # 5. Material 최종 저장 (링크 정보 포함)
+        # mat_id 변수가 위에서 정의되어 있어야 합니다. (payload.id 사용)
+    mat_id = payload.id
+
+    final_material_data = {
+        "id": mat_id,
+        "title": payload.title,
+        "content": payload.content,
+        "linked_entity_ids": new_linked_ids, # [핵심] 추출한 ID들 연결
+    }
+
+    # material_repo에 저장 (함수명은 사용하시는 repo에 맞게)
+    history_repo.upsert_material(MATERIAL_DB_PATH, final_material_data)
+
+    return {
+        "status": "success",
+        "material_id": mat_id,
+        "extracted_entities": len(new_linked_ids),
+        "details": results # 디버깅용으로 상세 결과도 같이 반환하면 좋습니다
+    }
+
+@router.delete("/material/{material_id}")
+async def delete_material(material_id: str):
+    """
+    [Cascade Delete]
+    자료(Material)와 그에 종속된 모든 역사적 엔티티(Entity)를 삭제합니다.
+    """
+    print(f"🗑️ [Delete Request] Material ID: {material_id}")
+
+    # 1. 삭제할 Material 조회 (연결된 엔티티 ID를 알기 위해)
+    target_material = history_repo.get_material(MATERIAL_DB_PATH, material_id)
+
+    if not target_material:
+        raise HTTPException(status_code=404, detail="삭제할 자료를 찾을 수 없습니다.")
+
+    # 2. 연결된 Entity들 연쇄 삭제 (Cleanup)
+    linked_ids = target_material.get("linked_entity_ids", [])
+
+    if linked_ids:
+        print(f"🔗 연결된 엔티티 {len(linked_ids)}건 삭제 시작...")
+        for ent_id in linked_ids:
+            # auto_sync=False로 개별 삭제 시 부하를 줄임
+            history_repo.delete_entity(HISTORY_DB_PATH, ent_id, auto_sync=False)
+
+        # 3. 벡터 DB 동기화 (한 번에 반영)
+        history_repo.force_sync_vector_db(HISTORY_DB_PATH)
+
+    # 4. Material 원본 삭제
+    success = history_repo.delete_material(MATERIAL_DB_PATH, material_id)
+
+    if success:
+        return {"status": "success", "message": f"자료와 엔티티 {len(linked_ids)}건이 삭제되었습니다."}
+    else:
+        raise HTTPException(status_code=500, detail="자료 삭제 실패")
