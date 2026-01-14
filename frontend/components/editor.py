@@ -6,7 +6,7 @@ import datetime
 # 컴포넌트 및 API 불러오기
 from components.common import get_current_project, get_current_document
 from components.sidebar import render_sidebar
-from api import save_document_api, analyze_text_api
+from api import save_document_api, analyze_text_api, analyze_clio_api
 
 
 def render_editor():
@@ -132,16 +132,33 @@ def render_editor():
             with col_clio:
                 if st.button("🏛️ 클리오 (역사 고증)", use_container_width=True):
                     with st.spinner("분석 중..."):
-                        api_res = analyze_text_api(
-                            current_doc['id'],
-                            content_source,
-                            episode_no=ep_num,
-                            sensitivity=sens_val,
-                            modules=["clio"]
-                        )
-                        new_items = [i for i in api_res if i.get('role') == 'story']
+                        api_res = analyze_clio_api(current_doc, content_source)
+
+                        new_items = []
+
+                        # 2. 응답 데이터 구조 확인 및 변환
+                        if api_res and isinstance(api_res, dict):
+                            # (A) 백엔드가 딕셔너리 형태인 경우 (Clio 구조)
+                            analysis = api_res.get("analysis_result", {})
+                            history_list = analysis.get("historical_context", [])
+
+                            for item in history_list:
+                                # 프론트엔드 UI에 맞는 키(role, msg, fix)로 변환
+                                new_items.append({
+                                    "role": "story",  # UI 필터링용
+                                    "msg": item.get("reason", "분석 결과 없음"),  # 메인 메시지
+                                    "fix": f"원문: {item.get('original_sentence', '')}" # 제안/참고 내용
+                                })
+
+                        elif isinstance(api_res, list):
+                            # (B) 백엔드가 리스트 형태인 경우 (기존 호환)
+                            new_items = [i for i in api_res if i.get('role') == 'story']
+
+                        # 3. 결과 저장 및 갱신
+                        # 기존 스토리키퍼 결과(role != 'story')는 유지하고, 새 클리오 결과만 합침
                         filtered = [i for i in current_results if i.get('role') != 'story']
                         st.session_state.analysis_results[current_doc['id']] = filtered + new_items
+
                         st.session_state.last_opened_expander = "clio"
                         st.session_state.clio_analyzed = True
                         st.rerun()
@@ -163,15 +180,79 @@ def render_editor():
                     st.success("✅ 설정 충돌 없음")
 
         if st.session_state.clio_analyzed:
-            label = f"🏛️ 클리오 결과 ({len(clio_msgs)})" if clio_msgs else "🏛️ 클리오 (발견된 오류 없음)"
+            # 1. 데이터 가져오기
+            result_data = st.session_state.analysis_results.get(current_doc['id'], {})
+
+            # 2. 라벨 및 카운트 계산
+            label = "🏛️ 클리오 (결과 없음)"
+            history_items = []
+
+            # (Case A) 딕셔너리 구조 (새로운 Clio API)
+            if isinstance(result_data, dict):
+                analysis = result_data.get("analysis_result", {})
+                found_count = analysis.get("found_entities_count", 0)
+                history_items = analysis.get("historical_context", [])
+
+                label = f"🏛️ 클리오 결과 ({found_count}건 감지)" if found_count > 0 else "🏛️ 클리오 (특이사항 없음)"
+
+            # (Case B) 리스트 구조 (구버전 호환)
+            elif isinstance(result_data, list):
+                # role이 'story'인 것만 필터링 (필요하다면)
+                history_items = [i for i in result_data if i.get('role') == 'story']
+                label = f"🏛️ 클리오 결과 ({len(history_items)})" if history_items else "🏛️ 클리오 (발견된 오류 없음)"
+
+            # 3. Expander 렌더링
             with st.expander(label, expanded=(st.session_state.last_opened_expander == "clio")):
-                if clio_msgs:
-                    for m in clio_msgs:
+
+                if not result_data:
+                    st.info("분석된 결과가 없습니다.")
+
+                # (Case A 렌더링) 딕셔너리 -> 고급 카드 UI
+                elif isinstance(result_data, dict):
+                    if not history_items:
+                        st.success("✅ 발견된 역사적 오류나 설정 충돌이 없습니다.")
+
+                    for item in history_items:
+                        is_positive = item.get("is_positive", False)
+                        keyword = item.get('keyword', '키워드 없음')
+                        original_sentence = item.get('original_sentence', '')
+                        reason = item.get('reason', '')
+
+                        # 카드 디자인
+                        with st.container(border=True):
+                            # 헤더: 상태 아이콘 + 키워드
+                            c_head_l, c_head_r = st.columns([0.7, 0.3])
+                            with c_head_l:
+                                if is_positive:
+                                    st.markdown("### ✅ 고증 일치")
+                                else:
+                                    st.markdown("### ⚠️ 고증 오류 의심")
+                            with c_head_r:
+                                st.caption("KEYWORD")
+                                st.code(keyword, language="text")
+
+                            # 본문: 원문 + 분석 결과
+                            st.markdown(f"> *\"{original_sentence}\"*")
+                            st.divider()
+
+                            if is_positive:
+                                st.success(reason, icon="✅")
+                            else:
+                                st.error(reason, icon="⚠️")
+
+                # (Case B 렌더링) 리스트 -> 기존 심플 UI
+                elif isinstance(result_data, list):
+                    if not history_items:
+                        st.success("✅ 고증 오류 없음")
+
+                    for m in history_items:
                         st.markdown(
-                            f"""<div class="moneta-card" style="background:#FFF5F5; border-left:4px solid #D32F2F"><b>{m.get('msg')}</b><br><span style="font-size:13px; color:#555">💡 제안: {m.get('fix')}</span></div>""",
-                            unsafe_allow_html=True)
-                else:
-                    st.success("✅ 고증 오류 없음")
+                            f"""<div class="moneta-card" style="background:#FFF5F5; border-left:4px solid #D32F2F">
+                                <b>{m.get('msg')}</b><br>
+                                <span style="font-size:13px; color:#555">💡 제안: {m.get('fix')}</span>
+                            </div>""",
+                            unsafe_allow_html=True
+                        )
 
     # 6. 에디터 영역 (기존과 동일)
     content = st_quill(value=current_doc.get('content', ""), key=quill_key)

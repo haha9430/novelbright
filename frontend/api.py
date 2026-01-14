@@ -1,6 +1,7 @@
 # frontend/api.py
 import requests
 import streamlit as st
+import io
 
 BASE_URL = "http://127.0.0.1:8000"
 
@@ -41,6 +42,23 @@ def analyze_text_api(doc_id, content, episode_no=1, sensitivity=5, modules=None)
     except Exception as e:
         st.error(f"연결 실패: {e}")
         return []
+
+def analyze_clio_api(current_doc, content_source) :
+    try:
+        content_source_txt = io.BytesIO(content_source.encode("utf-8"))
+        content_source_txt.name = f"{current_doc['title']}.txt"  # 파일명 지정 필요
+        form_data_analyzer = {"file": (content_source_txt.name, content_source_txt, "text/plain")}
+
+        # 안전하게 처리된 content_source 전송
+        res = requests.post("http://127.0.0.1:8000/manuscript/analyze", files=form_data_analyzer, data={"title": current_doc['title']})
+        print(res)
+        if res.status_code == 200:
+            return res.json()
+        else:
+            st.error(f"오류: {res.text}")
+    except Exception as e:
+        st.error(f"연결 실패: {e}")
+
 
 def save_material_api(material_data):
     try:
