@@ -3,6 +3,7 @@ import uuid
 from components.common import get_current_project
 from components.sidebar import render_sidebar
 from api import save_material_api, delete_material_api
+import requests
 
 
 def render_materials():
@@ -51,13 +52,15 @@ def render_materials():
 
                 # 삭제 버튼
                 if c2.button("🗑", key=f"del_m_{sel_mat['id']}"):
-                    if delete_material_api(sel_mat['id']):
+                    try:
+                        requests.delete(f"http://127.0.0.1:8000/history/material/{sel_mat['id']}")
                         proj['materials'].remove(sel_mat)
                         st.session_state.selected_material_id = None
                         st.toast("삭제됨")
                         st.rerun()
-                    else:
-                        st.error("삭제 실패")
+                    except Exception as e:
+                        st.error("삭제 실패 (서버 연결 확인)")
+                        st.exception(e)
 
                 # 제목 편집
                 new_t = st.text_input("제목", value=sel_mat['title'])
@@ -71,10 +74,16 @@ def render_materials():
 
                 # 저장 버튼
                 if st.button("💾 저장하기", type="primary", use_container_width=True):
-                    # api.py는 딕셔너리를 그대로 보내므로 수정 불필요
-                    if save_material_api(sel_mat):
+                    material_payload = {
+                        "id": sel_mat['id'],
+                        "title": sel_mat['title'],
+                        "content": sel_mat['content']
+                    }
+
+                    try:
+                        requests.post("http://127.0.0.1:8000/history/upsert", json=material_payload)
                         st.toast("저장 완료!", icon="✅")
-                    else:
-                        st.error("저장 실패")
+                    except:
+                        st.error("저장 실패 (서버 연결 확인)")
         else:
             st.info("👈 왼쪽 목록에서 자료를 선택하거나 추가하세요.")
