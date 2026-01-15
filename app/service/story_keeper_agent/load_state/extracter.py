@@ -262,9 +262,13 @@ Input:
     # - important_parts 없음
     # =========================
     def update_global_settings(self, text: str) -> Dict[str, Any]:
+        """
+        [수정됨] 기존 plot.json 내용을 보존하면서 summary와 genre만 업데이트
+        """
         if not isinstance(text, str) or not text.strip():
             return {"status": "error", "message": "empty text"}
 
+        # 1. 요약 및 장르 추출 (기존 로직 유지)
         summary = _pick_summary(text)
 
         allowed_genres = [
@@ -280,7 +284,6 @@ Input:
         if self.llm is not None:
             prompt = f"""
 너는 웹소설 편집자다. 아래 글을 읽고 장르를 추측해라.
-
 [규칙]
 - 출력은 JSON만
 - 키는 "genre" 하나만
@@ -302,6 +305,7 @@ Input:
                     data = self._safe_json(raw) or {}
                     g = data.get("genre", [])
 
+                    # (장르 정제 로직 기존 유지)
                     if isinstance(g, str) and g.strip():
                         g_list = [g.strip()]
                     elif isinstance(g, list):
@@ -313,29 +317,40 @@ Input:
                     banned = {"기타", "일반", "모름", "unknown", "etc"}
                     cleaned: List[str] = []
                     for x in g_list:
-                        if x in banned:
-                            continue
-                        if x not in allowed:
-                            continue
-                        if x not in cleaned:
-                            cleaned.append(x)
+                        if x in banned: continue
+                        if x not in allowed: continue
+                        if x not in cleaned: cleaned.append(x)
 
                     genre = cleaned[:3]
-                    if genre:
-                        break
+                    if genre: break
                 except Exception:
                     genre = []
-
 
         if not genre:
             genre = ["드라마"]
 
-        data_out = {"summary": summary, "genre": genre}
+        # =========================================================
+        # ✅ [핵심 수정 구간] 기존 데이터 읽기 -> 병합 -> 저장
+        # =========================================================
+
+        # 1. 기존 파일이 있으면 읽어옵니다. (없으면 빈 딕셔너리)
+        current_data = _read_json(self.global_setting_file, default={})
+
+        # 2. 기존 데이터에 새로운 summary와 genre를 덮어씌웁니다.
+        # 이렇게 해야 기존에 있던 'main_characters' 같은 다른 키들이 지워지지 않습니다.
+        current_data["summary"] = summary
+        current_data["genre"] = genre
+
+        # (선택사항) 분석에 사용된 원본 텍스트도 저장해두면 나중에 유용할 수 있습니다.
+        # current_data["last_analysis_text"] = text[:500] + "..."
 
         try:
-            _write_json(self.global_setting_file, data_out)
-            return {"status": "success", "data": data_out}
+            # 3. 병합된 전체 데이터를 저장합니다.
+            _write_json(self.global_setting_file, current_data)
+            print(f"🌍 [세계관 설정] 업데이트 완료: {self.global_setting_file}")
+            return {"status": "success", "data": current_data}
         except Exception as e:
+            print(f"🔥 [세계관 설정] 저장 실패: {e}")
             return {"status": "error", "message": str(e)}
 
 

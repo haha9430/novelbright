@@ -10,7 +10,7 @@ from components.sidebar import render_sidebar
 from app.service.story_keeper_agent.load_state.extracter import PlotManager
 
 # LLM이 없거나 실패할 때 로컬 저장(플롯 요약/정리 저장)
-from api import save_world_setting_api
+from frontend.api import save_world_setting_api
 
 
 def _project_root() -> Path:

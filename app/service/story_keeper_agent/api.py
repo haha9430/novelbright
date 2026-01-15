@@ -92,7 +92,32 @@ def _load_character_config() -> dict:
 
 
 def _call_upsert_character(name: str, text: str):
+    # 1. [중요] 현재 실행 중인 위치(CWD)와 실제 저장 경로를 찍어봅니다.
+    print(f"📂 현재 실행 위치(CWD): {os.getcwd()}")
+
+    # 상대 경로 'app/data/...'는 실행 위치에 따라 달라집니다.
+    # 로컬 테스트라면 보통 프로젝트 루트에서 실행하므로 그대로 둬도 되지만,
+    # 확실히 하기 위해 절대 경로로 바꿔서 확인해보세요.
+    target_path = os.path.abspath("app/data/characters.json")
+    print(f"💾 실제 저장 시도 경로: {target_path}")
+
     try:
+        # 2. upsert_character 호출
+        result = upsert_character(
+            name=name,
+            features=text,
+            db_path=target_path # 👈 경로를 직접 주입
+        )
+
+        # 3. 결과 로그 출력
+        if result['status'] == 'success':
+            print(f"✅ 저장 성공! 저장된 키(Key): {result['name']}")
+            print(f"   👉 행동: {result['action']} (inserted=신규, merged=병합)")
+        else:
+            print(f"❌ 저장 실패 응답: {result}")
+
+        return result
+        '''
         sig = inspect.signature(upsert_character)
         params = sig.parameters
 
@@ -121,7 +146,7 @@ def _call_upsert_character(name: str, text: str):
             return upsert_character(name=name, text=text)
 
         return upsert_character(name, text)
-
+        '''
     except TypeError:
         return upsert_character(name, text)
     except Exception:

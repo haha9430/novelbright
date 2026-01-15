@@ -6,16 +6,24 @@ from typing import Any, Dict
 
 import requests
 
+# 👇 [추가] .env 파일을 강제로 읽어들이는 코드
+try:
+    from dotenv import load_dotenv
+    # 프로젝트 루트의 .env 파일을 찾아서 로드합니다.
+    load_dotenv(override=True)
+    print("✅ .env 파일 로드 시도 완료")
+except ImportError:
+    print("⚠️ python-dotenv가 설치되지 않았습니다. (pip install python-dotenv)")
 
 class SolarClient:
     def __init__(self) -> None:
         self.api_key = os.getenv("SOLAR_API_KEY", "").strip()
-        self.base_url = os.getenv("SOLAR_BASE_URL", "").strip()
+        self.base_url = os.getenv("SOLAR_BASE_URL", "https://api.upstage.ai/v1/chat/completions").strip()
         self.model = os.getenv("SOLAR_MODEL", "solar-pro").strip()
 
     def parse_character(self, text: str) -> Dict[str, Any]:
         """
-        (기존 기능 유지) 등장인물 설명 -> 캐릭터 JSON(payload)만 뽑아오기
+        [수정됨] DB 스키마(job_status, age_gender 등)에 맞춰 캐릭터 정보를 추출합니다.
         """
         if not text or not text.strip():
             raise ValueError("text is empty")
@@ -25,18 +33,20 @@ class SolarClient:
                 "Solar 설정이 없습니다. 환경변수 SOLAR_API_KEY, SOLAR_BASE_URL을 설정하세요."
             )
 
+        # ✅ [핵심 수정] DB에 저장되는 키 이름과 100% 일치시켰습니다.
         schema_instruction = {
-            "name": "string",
-            "birthdate_or_age": "string",
-            "gender": "string",
-            "occupation": "string",
-            "core_features": ["string", "string", "string"],
-            "personality_strengths": ["string", "string", "string"],
-            "personality_weaknesses": ["string", "string", "string"],
-            "external_goal": "string",
-            "internal_goal": "string",
-            "trauma_weakness": "string",
-            "speech_habit": "string",
+            "name": "string (이름)",
+            "age_gender": "string (나이와 성별 서술, 예: '20대 남성')",
+            "job_status": "string (직업 또는 신분)",
+            "core_traits": ["string", "string", "string"], # 핵심 특징 3가지
+            "personality": {
+                "pros": "string (성격의 장점)",
+                "cons": "string (성격의 단점)"
+            },
+            "outer_goal": "string (외적 목표)",
+            "inner_goal": "string (내적 목표)",
+            "trauma_weakness": "string (트라우마 또는 약점)",
+            "speech_habit": "string (말버릇)",
             "relationships": [
                 {"target_name": "string", "type": "string", "summary": "string"}
             ],
@@ -44,17 +54,18 @@ class SolarClient:
         }
 
         system_prompt = (
-            "너는 웹소설 총괄 편집자다.\n"
-            "사용자가 제공한 등장인물 설명 텍스트를 분석해, 아래 JSON 스키마에 맞춰 정보를 구조화하라.\n"
-            "규칙:\n"
-            "1) 반드시 JSON만 출력한다(설명/문장/마크다운 금지).\n"
-            "2) 리스트 항목은 가능하면 3개로 채운다(부족하면 1~2개도 가능).\n"
-            "3) 텍스트에 없는 정보는 빈 문자열 또는 빈 리스트로 둔다.\n"
-            "4) relationships는 대상 인물의 이름을 target_name에 넣는다.\n"
-            f"출력 JSON 스키마 예시는 다음과 같다:\n{json.dumps(schema_instruction, ensure_ascii=False)}"
+            "너는 웹소설 캐릭터 설정을 정리하는 전문 편집자다.\n"
+            "사용자가 제공한 텍스트를 분석해, 반드시 아래 JSON 양식에 맞춰 정보를 추출하라.\n\n"
+            "[작업 규칙]\n"
+            "1. 출력 포맷: 오직 JSON 데이터만 출력할 것 (마크다운, 설명 금지).\n"
+            "2. 빈 값 처리: 텍스트에 정보가 없으면 'none' 문자열을 넣을 것 (빈 칸으로 두지 말 것).\n"
+            "3. 리스트: 'core_traits'는 가능한 3개로 채우고, 없으면 빈 리스트 []로 둘 것.\n"
+            "4. 성격: 'personality'는 pros(장점)와 cons(단점) 필드를 가진 객체로 만들 것.\n"
+            "5. 키 이름 준수: 아래 스키마의 키 이름을 정확히 지킬 것.\n\n"
+            f"Target JSON Schema:\n{json.dumps(schema_instruction, ensure_ascii=False)}"
         )
 
-        user_prompt = f"등장인물 설명:\n{text}"
+        user_prompt = f"캐릭터 설명 텍스트:\n{text}"
 
         content = self._request(system_prompt, user_prompt)
         content = self._strip_code_fences(content)
@@ -63,7 +74,9 @@ class SolarClient:
         try:
             return json.loads(content)
         except json.JSONDecodeError as e:
-            raise ValueError(f"Solar output is not valid JSON: {e}\nRaw: {content}")
+            # 파싱 실패 시 로그를 남기거나 에러 처리
+            print(f"⚠️ JSON 파싱 실패. 원본 응답:\n{content}")
+            raise ValueError(f"Solar output is not valid JSON: {e}")
 
     def parse_command(self, text: str) -> Dict[str, Any]:
         """
