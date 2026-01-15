@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Tuple
 
 DB_PATH = "app/data/characters.json"
 
+from app.service.characters.solar_client import SolarClient
 
 # -------------------------
 # 파일 IO
@@ -281,7 +282,43 @@ def _extract_age_gender(text: str) -> str:
         return f"{age} / {gender}"
     return age or gender
 
+def _extract_from_text(text: str) -> Dict[str, Any]:
+    print("\n" + "="*50)
+    print("🚀 [1단계] _extract_from_text 시작")
+    print(f"   👉 입력된 텍스트(앞 50자): {text[:50]}...")
 
+    if not text or not text.strip():
+        print("   ⚠️ 텍스트가 비어있어서 빈 딕셔너리 리턴")
+        return {}
+
+    if SolarClient is None:
+        print("   ❌ SolarClient 클래스가 없습니다 (Import 실패).")
+        return {}
+
+    try:
+        print("   🔌 SolarClient 인스턴스 생성 및 호출 시도...")
+        client = SolarClient()
+
+        # 실제 AI 호출
+        result = client.parse_character(text)
+
+        print(f"   ✅ [Solar 응답 성공] 타입: {type(result)}")
+        print(f"   👉 응답 내용(Keys): {list(result.keys()) if isinstance(result, dict) else 'Dict가 아님'}")
+        # 내용이 너무 길 수 있으니 일부만 출력
+        print(f"   👉 응답 데이터(일부): {str(result)[:100]}...")
+
+        return result
+
+    except Exception as e:
+        print(f"   🔥 [Solar 호출 에러] {e}")
+        import traceback
+        traceback.print_exc() # 에러의 상세 내용을 다 보여줍니다
+        return {}
+    finally:
+        print("🚀 [1단계] 종료")
+        print("="*50 + "\n")
+
+'''
 def _extract_from_text(desc: str) -> Dict[str, Any]:
     desc = _remove_footnotes(desc or "")
     desc = _norm(desc)
@@ -339,7 +376,7 @@ def _extract_from_text(desc: str) -> Dict[str, Any]:
         )
 
     return result
-
+'''
 
 # -------------------------
 # MERGE(보완/수정) 로직
@@ -489,24 +526,43 @@ def _merge_character(old: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]
 # 공개 함수
 # -------------------------
 def parse_character_with_name(name: str, features: str) -> Dict[str, Any]:
+    print(f"🧩 [2단계] parse_character_with_name 호출됨 (이름: {name})")
+
     nm = _clean_name(name)
     if not nm:
+        print("   ❌ 이름이 없어서 에러 발생")
         raise ValueError("name is required")
 
+    # 위에서 만든 로그 빵빵한 함수 호출
     extracted = _extract_from_text(features or "")
 
-    return {
+    print(f"   🔄 [병합 중] 추출된 데이터로 최종 JSON 조립 시작...")
+
+    final_data = {
         "name": nm,
         "age_gender": extracted.get("age_gender", "none"),
         "job_status": extracted.get("job_status", "none"),
-        "core_traits": extracted.get("core_traits", "none"),
+        "core_traits": extracted.get("core_traits", []),
         "personality": extracted.get("personality", {"pros": "none", "cons": "none"}),
         "outer_goal": extracted.get("outer_goal", "none"),
         "inner_goal": extracted.get("inner_goal", "none"),
         "trauma_weakness": extracted.get("trauma_weakness", "none"),
         "speech_habit": extracted.get("speech_habit", "none"),
-        "relationships": extracted.get("relationships", "none"),
+        "relationships": extracted.get("relationships", []),
     }
+
+    # 'none'이 아닌 유효한 값이 몇 개나 들어갔는지 확인
+    valid_count = sum(1 for v in final_data.values() if v != "none" and v != [])
+    print(f"   ✅ [최종 조립 완료] 유효 데이터 개수: {valid_count} / {len(final_data)}")
+
+    # job_status가 제대로 들어갔는지 확인
+    print(f"   👉 핵심 필드 확인 (job_status): {final_data['job_status']}")
+
+    return final_data
+
+def _clean_name(name: str) -> str:
+    if not name: return ""
+    return name.strip()
 
 
 def upsert_character(name: str, features: str, *, db_path: str = DB_PATH) -> Dict[str, Any]:

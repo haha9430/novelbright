@@ -7,7 +7,7 @@ import textwrap
 # 컴포넌트 및 API 불러오기
 from components.common import get_current_project, get_current_document
 from components.sidebar import render_sidebar
-from api import analyze_clio_api, analyze_text_api, save_document_api, save_story_history_api
+from frontend.api import analyze_clio_api, analyze_text_api, save_document_api, save_story_history_api
 
 def _strip_html_to_text(html: str) -> str:
     if not isinstance(html, str):

@@ -92,108 +92,153 @@ def _normalize_storykeeper_items(raw: Any) -> List[Dict[str, Any]]:
 
 
 # =========================
-# 1) 스토리키퍼 분석
+# 1) 스토리키퍼 분석 (API 호출)
 # =========================
 def analyze_text_api(doc_id: str, content: str, episode_no: int = 1, severity: str = "medium") -> List[Dict[str, Any]]:
     """
-    ✅ 여기서 severity는 UI 필터용
-    ✅ 분석 자체는 항상 전체(low threshold) 생성으로 돌려서,
-       '확실한 충돌인데 0건' 같은 상황을 줄임
+    POST /manuscript_feedback 호출
     """
     plain = _strip_html_to_text(content)
+    url = f"http://127.0.0.1:8000/story/manuscript_feedback"
+
+    # 쿼리 파라미터
+    params = {
+        "episode_no": episode_no,
+        "debug_raw": False
+    }
+
+    # Body (text/plain)
+    headers = {"Content-Type": "text/plain; charset=utf-8"}
 
     try:
-        from app.service.story_keeper_agent.pipeline import run_pipeline
-    except Exception as e:
-        st.error(f"파이프라인 import 실패: {e}")
-        return []
+        response = requests.post(
+            url,
+            params=params,
+            data=plain.encode('utf-8'),
+            headers=headers
+        )
 
-    try:
-        # ✅ 핵심: 항상 low로 돌려서 전부 받기
-        raw = run_pipeline(episode_no=int(episode_no), raw_text=plain, severity="low")
-    except Exception as e:
-        st.error(f"파이프라인 실행 실패: {e}")
-        return []
+        if response.status_code == 200:
+            result = response.json()
+            # UI 필터링을 위한 정규화 (severity 필터는 UI에서 처리한다고 했으므로 여기선 raw 데이터 반환)
+            return _normalize_storykeeper_items(result)
+        else:
+            st.error(f"분석 요청 실패: {response.status_code} - {response.text}")
+            return []
 
-    return _normalize_storykeeper_items(raw)
+    except Exception as e:
+        st.error(f"API 통신 오류: {e}")
+        return []
 
 
 # =========================
-# 2) 요약 저장(히스토리)
+# 2) 요약 저장(히스토리) (API 호출)
 # =========================
 def save_story_history_api(episode_no: int, full_text: str) -> Tuple[bool, Dict[str, Any]]:
-    try:
-        from app.service.story_keeper_agent.load_state.extracter import StoryHistoryManager
-    except Exception as e:
-        return False, {"status": "error", "message": f"StoryHistoryManager import 실패: {e}"}
+    """
+    백엔드의 /manuscript_feedback API가 내부적으로
+    ingest_episode(히스토리 저장)를 수행하므로 동일한 API를 호출합니다.
+    """
+    plain = _strip_html_to_text(full_text)
+    url = "http://127.0.0.1:8000/story/manuscript_feedback"
+
+    params = {"episode_no": episode_no, "debug_raw": False}
+    headers = {"Content-Type": "text/plain; charset=utf-8"}
 
     try:
-        manager = StoryHistoryManager()
-        plain = _strip_html_to_text(full_text)
-        res = manager.summarize_and_save_episode(episode_no=int(episode_no), full_text=plain)
-        ok = isinstance(res, dict) and res.get("status") == "success"
-        return ok, res if isinstance(res, dict) else {"status": "error", "message": "unknown"}
+        # 단순히 저장/학습이 목적이므로 결과값(issues)은 크게 중요하지 않음
+        response = requests.post(
+            url,
+            params=params,
+            data=plain.encode('utf-8'),
+            headers=headers
+        )
+
+        if response.status_code == 200:
+            return True, {"status": "success", "message": "History updated via API"}
+        else:
+            return False, {"status": "error", "message": response.text}
+
     except Exception as e:
         return False, {"status": "error", "message": str(e)}
 
 
 # =========================
-# 3) 문서 저장 (지금은 UI 유지용)
+# 3) 문서 저장 (UI 유지용)
 # =========================
 def save_document_api(doc_id: str, title: str, content: str) -> bool:
+    """
+    백엔드에 '문서 자체'를 저장하는 API는 없으므로
+    (에이전트 분석용 API만 존재),
+    프론트엔드 단독 기능(DB/파일저장)으로 유지하거나
+    추후 별도 CMS API가 필요합니다.
+    """
     return True
 
 
 # =========================
-# 4) 캐릭터 저장 (ImportError 해결 포인트)
+# 4) 캐릭터 저장 (API 호출)
 # =========================
 def save_character_api(name: str, description: str) -> bool:
     """
-    components/common.py에서 import하는 함수
+    POST /character_setting 호출
+    (Form Data 전송)
     """
     if not name or not description:
         return False
 
-    try:
-        from app.service.characters import upsert_character
-    except Exception as e:
-        st.error(f"characters 모듈 import 실패: {e}")
-        return False
+    url = "http://127.0.0.1:8000/story/character_setting"
+
+    # Form Data 형식
+    form_data = {
+        "name": name,
+        "text": description
+    }
 
     try:
-        db_path = str(_data_path("characters.json"))
-        res = upsert_character(name=name, features=description, db_path=db_path)
-        return isinstance(res, dict) and res.get("status") == "success"
+        response = requests.post(url, data=form_data)
+
+        if response.status_code == 200:
+            return True
+        else:
+            st.error(f"캐릭터 저장 실패: {response.text}")
+            return False
     except Exception as e:
-        st.error(f"캐릭터 저장 오류: {e}")
+        st.error(f"API 통신 오류: {e}")
         return False
 
 
 # =========================
-# 5) 세계관 저장 (plot.json)
+# 5) 세계관 저장 (API 호출)
 # =========================
 def save_world_setting_api(content: str) -> bool:
+    """
+    POST /world_setting 호출
+    (Body: text/plain)
+    """
     text = (content or "").strip()
     if not text:
         return False
 
-    # 기존 포맷 유지: summary/genre/important_parts
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    summary = lines[:5] if lines else [text[:180]]
-
-    data = {
-        "summary": summary,
-        "genre": [],  # 장르는 '명시된 것만' 원칙이면 여기서 자동추론 금지
-        "important_parts": summary[:12],
-    }
+    url = "http://127.0.0.1:8000/story/world_setting"
+    headers = {"Content-Type": "text/plain; charset=utf-8"}
 
     try:
-        _safe_write_json(_data_path("plot.json"), data)
-        return True
-    except Exception as e:
-        st.error(f"세계관 저장 실패: {e}")
-        return False
+        response = requests.post(
+            url,
+            data=text.encode('utf-8'),
+            headers=headers
+        )
 
+        if response.status_code == 200:
+            return True
+        else:
+            st.error(f"세계관 저장 실패: {response.text}")
+            return False
+
+    except Exception as e:
+        st.error(f"API 통신 오류: {e}")
+        return False
 
 # =========================
 # 6) 자료(materials)

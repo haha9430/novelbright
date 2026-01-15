@@ -11,7 +11,6 @@ from langchain_upstage import ChatUpstage
 
 
 def _project_root() -> Path:
-    # app/service/story_keeper_agent/load_state/extracter.py -> 프로젝트 루트
     return Path(__file__).resolve().parents[4]
 
 
@@ -26,45 +25,67 @@ def _read_json(path: Path, default: Any):
 
 
 def _write_json(path: Path, data: Any) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        # 여기서 예외를 다시 올리면 파이프라인이 터지니까, 호출부에서 잡게끔 raise 유지
-        raise e
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
 
-def _extract_explicit_genre(text: str) -> List[str]:
-    """
-    장르 자동추론 X
-    '장르:' / 'genre:' 처럼 사용자가 명시한 것만 추출
-    """
-    if not isinstance(text, str):
+def _split_sentences_ko(text: str) -> List[str]:
+    t = (text or "").strip()
+    if not t:
         return []
-    m = re.search(r"(장르|genre)\s*[:：]\s*(.+)", text, flags=re.IGNORECASE)
-    if not m:
-        return []
-    raw = m.group(2).strip()
-    parts = re.split(r"[,/|·\s]+", raw)
+    parts = re.split(r"(?<=[.!?。！？])\s+|\n+", t)
     out: List[str] = []
     for p in parts:
         p = p.strip()
-        if p and p not in out:
-            out.append(p)
-    return out[:10]
+        if len(p) < 8:
+            continue
+        out.append(p)
+    return out
+
+
+def _dedupe_keep_order(items: List[str], *, max_items: int) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for it in items:
+        s = (it or "").strip()
+        if not s:
+            continue
+        k = re.sub(r"\s+", " ", s)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(s)
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def _pick_summary(text: str) -> List[str]:
+    sents = _split_sentences_ko(text)
+    if not sents:
+        return []
+    summary = _dedupe_keep_order(sents, max_items=8)
+    if len(summary) < 4:
+        summary = _dedupe_keep_order(sents, max_items=4)
+    return summary[:8]
 
 
 class PlotManager:
     """
-    (친구 코드 기반) plot.json / story_history.json 관리 + LLM 요약/팩트추출
-    - 절대경로 제거: 프로젝트 루트 기준으로 경로 자동 설정
+    plot.json / story_history.json 관리
+
+    ✅ plot.json 저장 포맷 (딱 2개만)
+    {
+      "summary": [...],
+      "genre": ["..."]   # 최소 1개
+    }
     """
 
     def __init__(self):
         self._fix_ssl_cert_env()
 
-        # .env는 루트에 있으면 로드 (없어도 에러 X)
+        # .env 로드
         try:
             env_path = _project_root() / ".env"
             if env_path.exists():
@@ -72,18 +93,15 @@ class PlotManager:
         except Exception:
             pass
 
-        try:
-            self.llm = ChatUpstage(model="solar-pro")
-        except Exception:
-            self.llm = None
+        self.llm = self._init_llm()
 
         root = _project_root()
         self.global_setting_file = root / "app" / "data" / "plot.json"
-        self.characters_file = root / "app" / "data" / "characters.json"
         self.history_file = root / "app" / "service" / "story_keeper_agent" / "load_state" / "story_history.json"
 
         print(f"📂 plot.json: {self.global_setting_file}")
         print(f"📂 story_history.json: {self.history_file}")
+        print(f"🤖 LLM ready: {self.llm is not None}")
 
     def _fix_ssl_cert_env(self) -> None:
         try:
@@ -96,14 +114,24 @@ class PlotManager:
         except Exception:
             pass
 
-    # --------------------------------------------------------------------------
-    # 강력 JSON 파싱
-    # --------------------------------------------------------------------------
+    def _init_llm(self) -> Optional[ChatUpstage]:
+        key = (os.getenv("UPSTAGE_API_KEY") or "").strip()
+        if not key:
+            return None
+
+        model = (os.getenv("UPSTAGE_CHAT_MODEL") or "").strip() or "solar-pro"
+        try:
+            return ChatUpstage(model=model)
+        except Exception:
+            try:
+                return ChatUpstage()
+            except Exception:
+                return None
+
     def _safe_json(self, raw: str) -> Dict[str, Any]:
         if not raw:
             return {}
         raw = raw.strip()
-
         raw = re.sub(r"^```(?:json)?", "", raw, flags=re.IGNORECASE).strip()
         raw = re.sub(r"```$", "", raw).strip()
 
@@ -117,7 +145,7 @@ class PlotManager:
             return {}
 
     # =========================
-    # 1) 원고 요약 및 저장 (친구 함수명 유지)
+    # (필수) story_history 저장용
     # =========================
     def summarize_and_save(self, episode_no: int, full_text: str) -> Dict[str, Any]:
         if not isinstance(full_text, str) or not full_text.strip():
@@ -126,7 +154,6 @@ class PlotManager:
         history_data = _read_json(self.history_file, default={})
         prev_flow = history_data.get(str(int(episode_no) - 1), {}).get("story_flow", "")
 
-        # LLM 없으면 fallback
         if self.llm is None:
             result = {
                 "title": f"{episode_no}화",
@@ -178,11 +205,17 @@ class PlotManager:
             return {"status": "error", "message": str(e)}
 
     # =========================
-    # 2) 팩트 추출 (extract_facts)
+    # (필수) pipeline이 호출하는 extract_facts
+    # - LLM 없어도 파이프라인이 안 죽도록 "빈 구조" 반환
     # =========================
     def extract_facts(self, episode_no: int, full_text: str, story_state: Dict[str, Any]) -> Dict[str, Any]:
         if self.llm is None:
-            return {"episode_no": int(episode_no), "events": [], "characters": [], "state_changes": {}}
+            return {
+                "episode_no": int(episode_no),
+                "events": [],
+                "characters": [],
+                "state_changes": {},
+            }
 
         prompt = f"""
 Extract facts for consistency check.
@@ -195,83 +228,133 @@ Input:
         try:
             res = self.llm.invoke(prompt)
             raw = getattr(res, "content", str(res))
-            result = self._safe_json(raw) or {}
-            if not result:
-                return {"episode_no": int(episode_no), "events": [], "characters": [], "state_changes": {}}
-            result["episode_no"] = int(episode_no)
-            return result
+            data = self._safe_json(raw) or {}
+            if not data:
+                return {
+                    "episode_no": int(episode_no),
+                    "events": [],
+                    "characters": [],
+                    "state_changes": {},
+                }
+            data["episode_no"] = int(episode_no)
+
+            # 최소 형태 보정
+            if "events" not in data or not isinstance(data.get("events"), list):
+                data["events"] = []
+            if "characters" not in data or not isinstance(data.get("characters"), list):
+                data["characters"] = []
+            if "state_changes" not in data or not isinstance(data.get("state_changes"), dict):
+                data["state_changes"] = {}
+
+            return data
         except Exception:
-            return {"episode_no": int(episode_no), "events": [], "characters": [], "state_changes": {}}
+            return {
+                "episode_no": int(episode_no),
+                "events": [],
+                "characters": [],
+                "state_changes": {},
+            }
 
     # =========================
-    # 3) 세계관 저장 (update_global_settings)
-    # - genre는 "명시된 것만" 원칙 반영
+    # 세계관 저장
+    # - summary: 원문 문장 기반
+    # - genre: AI가 추측해서 최소 1개
+    # - important_parts 없음
     # =========================
     def update_global_settings(self, text: str) -> Dict[str, Any]:
+        """
+        [수정됨] 기존 plot.json 내용을 보존하면서 summary와 genre만 업데이트
+        """
         if not isinstance(text, str) or not text.strip():
             return {"status": "error", "message": "empty text"}
 
-        # LLM 없으면 프론트처럼 간단 저장
-        if self.llm is None:
-            summary_lines = [ln.strip() for ln in text.splitlines() if ln.strip()][:5]
-            data = {
-                "summary": summary_lines if summary_lines else [text.strip()[:180]],
-                "genre": _extract_explicit_genre(text),
-                "important_parts": summary_lines[:12],
-            }
-            try:
-                _write_json(self.global_setting_file, data)
-                return {"status": "success", "data": data}
-            except Exception as e:
-                return {"status": "error", "message": str(e)}
+        # 1. 요약 및 장르 추출 (기존 로직 유지)
+        summary = _pick_summary(text)
 
-        prompt = f"""
-너는 웹소설 편집자다. 아래 세계관 설정을 정리해서 JSON으로 반환하라.
+        allowed_genres = [
+            "로맨스", "로맨스판타지", "현대판타지", "판타지", "무협",
+            "헌터/게이트", "회귀", "빙의", "환생", "이세계",
+            "대체역사", "역사", "추리/미스터리", "스릴러", "공포",
+            "SF", "드라마", "코미디", "액션", "모험", "전쟁",
+            "정치", "의학", "성장", "학원", "서바이벌", "디스토피아"
+        ]
 
+        genre: List[str] = []
+
+        if self.llm is not None:
+            prompt = f"""
+너는 웹소설 편집자다. 아래 글을 읽고 장르를 추측해라.
 [규칙]
-1) 출력은 JSON만
-2) 키: "summary", "genre", "important_parts"
-3) genre는 "원문에 명시된 것(예: '장르: ...')"만 넣고, 추측/자동추론 금지
-4) summary/important_parts는 원문에서 근거가 드러나게 간단히 정리
+- 출력은 JSON만
+- 키는 "genre" 하나만
+- genre는 리스트
+- 반드시 후보에서만 선택
+- 최소 1개, 최대 3개 (절대 비우지 마)
+- "기타/일반/모름" 금지
 
-[입력]
-{text[:6000]}
+[후보]
+{allowed_genres}
+
+[텍스트]
+{text[:4500]}
 """
+            for _ in range(2):
+                try:
+                    res = self.llm.invoke(prompt)
+                    raw = getattr(res, "content", str(res))
+                    data = self._safe_json(raw) or {}
+                    g = data.get("genre", [])
+
+                    # (장르 정제 로직 기존 유지)
+                    if isinstance(g, str) and g.strip():
+                        g_list = [g.strip()]
+                    elif isinstance(g, list):
+                        g_list = [str(x).strip() for x in g if str(x).strip()]
+                    else:
+                        g_list = []
+
+                    allowed = set(allowed_genres)
+                    banned = {"기타", "일반", "모름", "unknown", "etc"}
+                    cleaned: List[str] = []
+                    for x in g_list:
+                        if x in banned: continue
+                        if x not in allowed: continue
+                        if x not in cleaned: cleaned.append(x)
+
+                    genre = cleaned[:3]
+                    if genre: break
+                except Exception:
+                    genre = []
+
+        if not genre:
+            genre = ["드라마"]
+
+        # =========================================================
+        # ✅ [핵심 수정 구간] 기존 데이터 읽기 -> 병합 -> 저장
+        # =========================================================
+
+        # 1. 기존 파일이 있으면 읽어옵니다. (없으면 빈 딕셔너리)
+        current_data = _read_json(self.global_setting_file, default={})
+
+        # 2. 기존 데이터에 새로운 summary와 genre를 덮어씌웁니다.
+        # 이렇게 해야 기존에 있던 'main_characters' 같은 다른 키들이 지워지지 않습니다.
+        current_data["summary"] = summary
+        current_data["genre"] = genre
+
+        # (선택사항) 분석에 사용된 원본 텍스트도 저장해두면 나중에 유용할 수 있습니다.
+        # current_data["last_analysis_text"] = text[:500] + "..."
+
         try:
-            res = self.llm.invoke(prompt)
-            raw = getattr(res, "content", str(res))
-            data = self._safe_json(raw) or {}
-
-            # genre 강제 보정: LLM이 추론했더라도 명시된 것만 유지
-            data["genre"] = _extract_explicit_genre(text)
-
-            if "summary" not in data or not isinstance(data.get("summary"), list):
-                # summary가 문자열이면 리스트로
-                s = data.get("summary")
-                if isinstance(s, str) and s.strip():
-                    data["summary"] = [s.strip()]
-                else:
-                    data["summary"] = []
-
-            if "important_parts" not in data or not isinstance(data.get("important_parts"), list):
-                ip = data.get("important_parts")
-                if isinstance(ip, str) and ip.strip():
-                    data["important_parts"] = [ip.strip()]
-                else:
-                    data["important_parts"] = []
-
-            _write_json(self.global_setting_file, data)
-            return {"status": "success", "data": data}
+            # 3. 병합된 전체 데이터를 저장합니다.
+            _write_json(self.global_setting_file, current_data)
+            print(f"🌍 [세계관 설정] 업데이트 완료: {self.global_setting_file}")
+            return {"status": "success", "data": current_data}
         except Exception as e:
+            print(f"🔥 [세계관 설정] 저장 실패: {e}")
             return {"status": "error", "message": str(e)}
 
 
 class StoryHistoryManager:
-    """
-    ✅ 너 프론트(api.py)가 기대하는 인터페이스 제공
-    - summarize_and_save_episode(episode_no, full_text)
-    """
-
     def __init__(self):
         self.pm = PlotManager()
 

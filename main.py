@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 # [Import 경로 수정] app 패키지 내부 깊숙한 곳에 있는 라우터들을 가져옵니다.
 from app.service.clio_fact_checker_agent.router import router as manuscript_router
 from app.service.clio_fact_checker_agent.history_router import router as history_router
+from app.service.story_keeper_agent.api import router as story_keeper_router
 
 # 공용 모듈 Import
 from app.common.history import repo as history_repo
@@ -139,6 +140,8 @@ app.include_router(manuscript_router)
 
 # 2. 역사 DB 관리 API (/history)
 app.include_router(history_router)
+
+app.include_router(story_keeper_router)
 
 @app.get("/health")
 def health_check():
