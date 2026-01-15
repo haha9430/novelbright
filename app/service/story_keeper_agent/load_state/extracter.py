@@ -95,9 +95,20 @@ class PlotManager:
 
         self.llm = self._init_llm()
 
-        root = _project_root()
-        self.global_setting_file = root / "app" / "data" / "plot.json"
-        self.history_file = root / "app" / "data" / "story_history.json"
+        # [수정] K8s PVC 마운트 경로를 직접 지정
+        k8s_data_dir = Path("/app/app/data")
+
+        if k8s_data_dir.exists():
+            self.data_dir = k8s_data_dir
+        else:
+            # 로컬 환경용
+            self.data_dir = _project_root() / "app" / "data"
+
+        self.global_setting_file = self.data_dir / "plot.json"
+        self.history_file = self.data_dir / "story_history.json"
+
+        # 디버깅을 위해 실제 경로 출력
+        print(f"📂 Active Data Dir: {self.data_dir}")
 
         print(f"📂 plot.json: {self.global_setting_file}")
         print(f"📂 story_history.json: {self.history_file}")

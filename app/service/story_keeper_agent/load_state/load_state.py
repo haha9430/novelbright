@@ -44,10 +44,16 @@ def load_state(episode_no: int) -> Dict[str, Any]:
     if not isinstance(episode_no, int) or episode_no < 1:
         raise ValueError("episode_no는 1 이상의 정수여야 합니다.")
 
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    pvc_dir = "/app/app/data"
 
-    plot_path = os.path.join(base_dir, "../../../data/plot.json")
-    history_path = os.path.join(base_dir, "story_history.json")
+    if os.path.exists(pvc_dir):
+        plot_path = os.path.join(pvc_dir, "plot.json")
+        history_path = os.path.join(pvc_dir, "story_history.json")
+    else:
+        # 로컬 환경용 하위 호환성 유지
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        plot_path = os.path.join(base_dir, "../../../data/plot.json")
+        history_path = os.path.join(base_dir, "story_history.json")
 
     plot = _read_json(plot_path, default={})
     history = _read_json(history_path, default={})
