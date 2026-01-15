@@ -1,0 +1,29 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# 시스템 의존성 설치 (필요시)
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# uv 설치
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.cargo/bin:\$PATH"
+
+# 패키지 파일 복사 및 설치
+COPY pyproject.toml .
+# (uv.lock이 있다면 아래 주석 해제)
+# COPY uv.lock .
+
+# 프로젝트 파일 복사
+COPY frontend ./frontend
+COPY app ./app
+# (백엔드와 코드를 공유하는 부분이 있다면 app도 필요할 수 있음.
+#  frontend 폴더 안에만 코드가 있다면 COPY frontend ./frontend 만 하세요)
+
+# 의존성 설치
+RUN uv sync
+
+# [중요] Streamlit 실행 (외부 접속 허용 옵션 필수)
+EXPOSE 8501
+CMD ["uv", "run", "streamlit", "run", "frontend/main.py", "--server.port=8501", "--server.address=0.0.0.0"]
+EOF
