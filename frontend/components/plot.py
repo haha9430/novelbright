@@ -24,11 +24,11 @@ def _project_root() -> Path:
 def _candidate_history_paths() -> list[Path]:
     root = _project_root()
 
-    p1 = root / "app" / "service" / "story_keeper_agent" / "load_state" / "story_history.json"
+    p1 = root / "app" / "data" / "story_history.json"
     p2 = root / "app" / "data" / "story_history.json"
 
     cwd = Path.cwd()
-    p3 = cwd / "app" / "service" / "story_keeper_agent" / "load_state" / "story_history.json"
+    p3 = cwd / "app" / "data" / "story_history.json"
     p4 = cwd / "app" / "data" / "story_history.json"
 
     return [p1, p2, p3, p4]
