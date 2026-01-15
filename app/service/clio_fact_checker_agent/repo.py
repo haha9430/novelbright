@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 # [추가] Solar 임베딩을 사용하기 위한 라이브러리 임포트
 from langchain_upstage import UpstageEmbeddings
 
-CHROMA_DB_PATH = os.path.join(os.getcwd(), "app/data/chroma_db")
+#HROMA_DB_PATH = os.path.join(os.getcwd(), "app/data/chroma_db")
 COLLECTION_NAME = "history_collection"
 
 # [수정] 전역 클라이언트 (재연결 방지)
@@ -22,31 +22,34 @@ class ManuscriptRepository:
 
         if _shared_client is None:
             print(f"📂 [ManuscriptRepo] 로컬 DB 경로 연결: {CHROMA_DB_PATH}")
-            _shared_client = chromadb.PersistentClient(
-                path=CHROMA_DB_PATH,
+            _shared_client = chromadb.HttpClient(
+                host=chroma_host,
+                port=int(chroma_port),
                 settings=Settings(allow_reset=True, anonymized_telemetry=False)
             )
 
         self.client = _shared_client
 
-        # [중요] 컬렉션을 가져올 때 embedding_function을 명시해야 함!
-        # ChromaDB 기본 클라이언트는 래핑이 안 되어 있어서,
-        # langchain_chroma가 아니라면 query 시에 embeddings를 직접 넣어주는 게 안전할 수 있습니다.
-        # 하지만 일반적으로는 get_collection에 embedding_function을 넣으면 자동 처리됩니다.
-        self.collection = self.client.get_collection(
-            name=COLLECTION_NAME,
-            # 주의: ChromaDB 네이티브 client는 LangChain 객체를 바로 못 받을 수 있음.
-            # 이 경우 아래 search 메서드에서 수동으로 임베딩해야 함.
-        )
+        # 컬렉션 가져오기
+        try:
+            self.collection = self.client.get_collection(name=COLLECTION_NAME)
+        except Exception:
+            # 혹시 컬렉션이 아직 안 만들어졌을 경우를 대비 (보통 vector_store에서 만들지만 안전하게)
+            print(f"⚠️ 컬렉션 '{COLLECTION_NAME}'을 찾을 수 없습니다. (아직 데이터가 없을 수 있음)")
+            self.collection = None
 
     def search(self, query_text: str, n_results: int = 1) -> Dict[str, Any]:
+        if self.collection is None:
+            print("⚠️ 컬렉션이 없어서 검색을 수행할 수 없습니다.")
+            return {"documents": [[]], "distances": [[]]}
+
         try:
-            # [수정] 텍스트를 바로 넣지 말고, Solar로 임베딩(숫자 변환)해서 넣기
+            # 텍스트를 벡터로 변환 (Solar 임베딩)
             query_vector = self.embedding_function.embed_query(query_text)
 
-            # query_texts 대신 query_embeddings 사용
+            # 쿼리 수행
             results = self.collection.query(
-                query_embeddings=[query_vector], # 384차원 대신 4096차원 벡터가 들어감
+                query_embeddings=[query_vector],
                 n_results=n_results
             )
             return results
