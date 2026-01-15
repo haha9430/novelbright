@@ -6,14 +6,9 @@ from typing import Any, Dict
 
 import requests
 
-# 👇 [추가] .env 파일을 강제로 읽어들이는 코드
-try:
-    from dotenv import load_dotenv
-    # 프로젝트 루트의 .env 파일을 찾아서 로드합니다.
-    load_dotenv(override=True)
-    print("✅ .env 파일 로드 시도 완료")
-except ImportError:
-    print("⚠️ python-dotenv가 설치되지 않았습니다. (pip install python-dotenv)")
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class SolarClient:
     def __init__(self) -> None:
