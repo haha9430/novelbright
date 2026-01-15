@@ -1,0 +1,85 @@
+name: Deploy to k8s
+
+on:
+  push:
+    branches: [ refactor/ui ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write   # GHCR push 필수
+
+    steps:
+      # 1. Checkout Code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Login to GHCR
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 3. Generate Version (pyproject.toml version + git hash)
+      - name: Generate Version Tag
+        id: meta
+        run: |
+          # pyproject.toml에서 버전 추출 (따옴표 제거)
+          VERSION=$(grep '^version' pyproject.toml | head -1 | cut -d '"' -f 2)
+          # Git Short Hash 추출
+          SHA=$(git rev-parse --short HEAD)
+          # 조합하여 태그 생성 (예: 0.1.0-a1b2c3d)
+          TAG="${VERSION}-${SHA}"
+          
+          echo "Generated Tag: $TAG"
+          echo "IMAGE_TAG=$TAG" >> $GITHUB_ENV
+
+      # 4. Build & Push Docker Image
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # 이미지명: ghcr.io/{github_username}/gangwon-jiwoong:{tag}
+          # 주의: GitHub ID가 대문자인 경우 소문자로 변환되어야 함. repository_owner는 대소문자 구분하므로 주의.
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/gangwon-choijiung:${{ env.IMAGE_TAG }}
+            ghcr.io/${{ github.repository_owner }}/gangwon-choijiung:latest
+
+      # 5. Deploy on K8s (SSH -> sed -> kubectl apply)
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}       # EC2 퍼블릭 IP
+          username: ${{ secrets.EC2_USER }} # 보통 ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}     # .pem 키 내용
+          script: |
+            # EC2 내부에서 수행될 스크립트
+            
+            # 1. 매니페스트 파일이 있는 디렉토리로 이동 (경로 수정 필요)
+            cd /home/ubuntu/workspace/deploy/novelbright
+            
+            git reset --hard
+            git pull origin refactor/ui
+            cd infra/k8s/application
+            
+            # 2. 이미지 태그 환경변수 설정
+            NEW_IMAGE="ghcr.io/${{ github.repository_owner }}/moneta-backend:${{ env.IMAGE_TAG }}"
+            
+            echo "Updating deployment to image: $NEW_IMAGE"
+            
+            # 3. sed 명령어로 deployment.yaml의 image 필드 수정
+            # (기존 image: ... 부분을 새로운 이미지로 교체)
+            sed -i "s|image: ghcr.io/.*|image: $NEW_IMAGE|g" 04-backend.yaml
+            
+            # 4. Kubernetes 적용 (전체 파일을 다시 적용해도 무방함)
+            # 변경사항이 있는 것만 K8s가 알아서 감지하여 업데이트합니다.
+            kubectl apply -f .
+            
+            # 5. [필수] 롤아웃 재시작 (이미지 태그가 같을 경우를 대비해 확실하게 재시작)
+            kubectl rollout restart deployment/backend -n moneta
