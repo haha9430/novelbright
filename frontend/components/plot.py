@@ -109,15 +109,6 @@ def _save_world_and_plot_json(draft: str) -> tuple[bool, str]:
     if not draft:
         return False, "세계관 내용이 비어있음"
 
-    # 1) LLM 경로
-    try:
-        manager = PlotManager()
-        res = manager.update_global_settings(draft)
-        if isinstance(res, dict) and res.get("status") == "success":
-            return True, ""
-    except Exception:
-        pass
-
     # 2) 로컬 저장(LLM 없어도 동작)
     try:
         ok = bool(save_world_setting_api(draft))
