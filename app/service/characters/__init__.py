@@ -34,6 +34,15 @@ def _write_json(path: str, data: Dict[str, Any]) -> None:
 # 텍스트 유틸
 # -------------------------
 def _norm(s: str) -> str:
+    # 만약 들어온 값이 문자열이 아니라면 (dict나 list 등)
+    if not isinstance(s, str):
+        # 1. dict나 list인 경우 중복 체크를 위해 문자열로 변환합니다.
+        if isinstance(s, (dict, list)):
+            return json.dumps(s, sort_keys=True, ensure_ascii=False)
+        # 2. 그 외의 경우 단순히 문자열로 바꿉니다.
+        return str(s)
+
+    # 문자열인 경우에만 기존처럼 strip()과 re.sub()를 실행합니다.
     return re.sub(r"\s+", " ", (s or "").strip())
 
 
@@ -305,7 +314,7 @@ def _extract_from_text(text: str) -> Dict[str, Any]:
         print(f"   ✅ [Solar 응답 성공] 타입: {type(result)}")
         print(f"   👉 응답 내용(Keys): {list(result.keys()) if isinstance(result, dict) else 'Dict가 아님'}")
         # 내용이 너무 길 수 있으니 일부만 출력
-        print(f"   👉 응답 데이터(일부): {str(result)[:100]}...")
+        print(f"   👉 응답 데이터: {str(result)}")
 
         return result
 

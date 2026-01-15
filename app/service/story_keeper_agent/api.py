@@ -3,6 +3,7 @@ import sys
 import os
 import json
 import inspect
+import traceback
 
 sys.path.insert(0, os.getcwd())
 
@@ -171,6 +172,13 @@ def character_setting(name: str = Form(...), text: str = Form(...)):
     try:
         return _call_upsert_character(name=name, text=text)
     except Exception as e:
+        # 1. 터미널(콘솔)에 아주 자세한 에러 위치를 찍어줍니다.
+        print("❌ 에러 발생 위치 추적:")
+        traceback.print_exc()
+
+        # 2. 만약 API 응답(Postman/Web)에서도 위치를 보고 싶다면:
+        # error_location = traceback.format_exc()
+        # raise HTTPException(status_code=400, detail=f"{str(e)}\n\n{error_location}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
