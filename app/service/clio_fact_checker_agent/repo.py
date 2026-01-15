@@ -3,25 +3,31 @@ import chromadb
 from chromadb.config import Settings
 from typing import List, Dict, Any
 
-# [추가] Solar 임베딩을 사용하기 위한 라이브러리 임포트
+# Solar 임베딩 라이브러리
 from langchain_upstage import UpstageEmbeddings
 
-#HROMA_DB_PATH = os.path.join(os.getcwd(), "app/data/chroma_db")
+# [변경 1] 로컬 경로 설정 삭제
+# CHROMA_DB_PATH = ... (삭제)
 COLLECTION_NAME = "history_collection"
 
-# [수정] 전역 클라이언트 (재연결 방지)
+# 전역 클라이언트 (재연결 방지)
 _shared_client = None
 
 class ManuscriptRepository:
     def __init__(self):
         global _shared_client
 
-        # [추가] DB 저장 때 사용했던 것과 동일한 임베딩 함수 생성
-        # (API KEY는 환경변수에 있거나 직접 넣어야 함)
+        # 1. 임베딩 함수 생성
         self.embedding_function = UpstageEmbeddings(model="solar-embedding-1-large")
 
         if _shared_client is None:
-            print(f"📂 [ManuscriptRepo] 로컬 DB 경로 연결: {CHROMA_DB_PATH}")
+            # [변경 2] 환경변수에서 호스트/포트 가져오기
+            chroma_host = os.getenv("CHROMA_HOST", "chromadb")
+            chroma_port = os.getenv("CHROMA_PORT", "8000")
+
+            print(f"📡 [ManuscriptRepo] ChromaDB 서버 연결 시도: {chroma_host}:{chroma_port}")
+
+            # [변경 3] HttpClient로 변경 (서버 접속 모드)
             _shared_client = chromadb.HttpClient(
                 host=chroma_host,
                 port=int(chroma_port),
@@ -56,3 +62,6 @@ class ManuscriptRepository:
         except Exception as e:
             print(f"⚠️ 검색 중 오류 발생: {e}")
             return {"documents": [[]], "distances": [[]]}
+
+# 싱글톤처럼 사용하고 싶다면 인스턴스 생성
+# manuscript_repo = ManuscriptRepository()
