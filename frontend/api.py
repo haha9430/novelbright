@@ -4,10 +4,11 @@ import streamlit as st
 import io
 import json
 import re
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
 def _project_root() -> Path:
     # frontend/api.py -> 프로젝트 루트
@@ -198,23 +199,6 @@ def save_world_setting_api(content: str) -> bool:
 # =========================
 # 6) 자료(materials)
 # =========================
-def save_material_api(material_data: Dict[str, Any]) -> bool:
-    try:
-        path = _data_path("materials.json")
-        db = _safe_read_json(path, default={"materials": []})
-        if not isinstance(db, dict):
-            db = {"materials": []}
-        if "materials" not in db or not isinstance(db["materials"], list):
-            db["materials"] = []
-
-        db["materials"].append(material_data)
-        _safe_write_json(path, db)
-        return True
-    except Exception as e:
-        st.error(f"자료 저장 실패: {e}")
-        return False
-
-
 def delete_material_api(material_id: str) -> bool:
     try:
         path = _data_path("materials.json")
@@ -228,6 +212,34 @@ def delete_material_api(material_id: str) -> bool:
     except Exception as e:
         st.error(f"자료 삭제 실패: {e}")
         return False
+
+# [수정 2] API 호출 부분에서 BASE_URL 사용
+def analyze_clio_api(current_doc, content_source):
+    try:
+        content_source_txt = io.BytesIO(content_source.encode("utf-8"))
+        content_source_txt.name = f"{current_doc['title']}.txt"
+        form_data_analyzer = {"file": (content_source_txt.name, content_source_txt, "text/plain")}
+
+        # [변경됨] 하드코딩 URL 제거 -> BASE_URL 변수 사용
+        api_url = f"{BASE_URL}/manuscript/analyze"
+
+        # 디버깅용 로그 (Streamlit 화면에는 안 보이고 컨테이너 로그에 찍힘)
+        print(f"📡 API 호출 시도: {api_url}")
+
+        res = requests.post(
+            api_url,
+            files=form_data_analyzer,
+            data={"title": current_doc['title']}
+        )
+
+        print(f"✅ 응답 코드: {res.status_code}")
+
+        if res.status_code == 200:
+            return res.json()
+        else:
+            st.error(f"오류: {res.text}")
+    except Exception as e:
+        st.error(f"연결 실패: {e}")
 
 def analyze_clio_api(current_doc, content_source) :
     try:
