@@ -4,13 +4,18 @@ metadata:
   name: moneta-ingress
   namespace: moneta
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
+    # Traefik 관련 설정 삭제
+    # 필요시 Nginx 설정 추가 (업로드 용량 제한 해제 등)
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
 spec:
+  # [핵심] 이 설정이 있어야 Nginx Controller가 알아먹습니다!
+  ingressClassName: nginx
+  
   rules:
   - host: novebright-moneta.duckdns.org
     http:
       paths:
-      # [1] 백엔드 (API & 문서) - 명확하게 지정
+      # [1] 백엔드 (API & 문서)
       - path: /health
         pathType: Prefix
         backend:
@@ -62,7 +67,6 @@ spec:
               number: 8880
 
       # [2] 프론트엔드 (나머지 모든 경로)
-      # 백엔드 주소가 아닌 건 다 화면(Frontend)으로 보냄
       - path: /
         pathType: Prefix
         backend:
