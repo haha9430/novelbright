@@ -10,7 +10,7 @@ spec:
   - host: novebright-moneta.duckdns.org
     http:
       paths:
-      # [1] 백엔드로 가야 할 "진짜 주소들" (여기를 다 적어줘야 함)
+      # [1] 백엔드 (API & 문서) - 명확하게 지정
       - path: /health
         pathType: Prefix
         backend:
@@ -18,21 +18,21 @@ spec:
             name: backend
             port:
               number: 8880
-      - path: /manuscript  # /manuscript 로 시작하는 모든 요청
+      - path: /manuscript
         pathType: Prefix
         backend:
           service:
             name: backend
             port:
               number: 8880
-      - path: /agent       # /agent 로 시작하는 모든 요청
+      - path: /agent
         pathType: Prefix
         backend:
           service:
             name: backend
             port:
               number: 8880
-      - path: /docs        # Swagger UI
+      - path: /docs
         pathType: Prefix
         backend:
           service:
