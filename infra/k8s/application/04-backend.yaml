@@ -15,7 +15,8 @@ spec:
     spec:
       containers:
       - name: backend
-        image: moneta-backend:lite
+        image: moneta-backend:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 8880
         envFrom:

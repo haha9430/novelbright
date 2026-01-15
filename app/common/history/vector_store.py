@@ -1,28 +1,37 @@
 # app/common/history/vector_store.py
-import os
-import shutil
 from typing import List, Dict, Any
 
+import os
 from dotenv import load_dotenv
 load_dotenv()
 
+import chromadb
 from langchain_chroma import Chroma
 from langchain_upstage import UpstageEmbeddings
 from langchain_core.documents import Document
 
 # 벡터 DB가 저장될 로컬 폴더 경로
-PERSIST_DIRECTORY = "app/data/chroma_db"
+#PERSIST_DIRECTORY = "app/data/chroma_db"
 
 class HistoryVectorStore:
     def __init__(self):
         # 1. 임베딩 모델 설정 (Upstage Solar)
         self.embedding_model = UpstageEmbeddings(model="solar-embedding-1-large")
 
-        # 2. ChromaDB 로드 (디스크에 저장된 데이터가 있으면 불러옴)
+        # [변경 3] 환경변수에서 ChromaDB 접속 정보 가져오기
+        # Kubernetes Service 이름이 'chromadb'라면 host 기본값을 'chromadb'로 설정
+        chroma_host = os.getenv("CHROMA_HOST", "chromadb")
+        chroma_port = os.getenv("CHROMA_PORT", "8000")
+
+        # [변경 4] HttpClient 생성 (서버 접속용)
+        # 로컬 파일에 쓰는 것이 아니라, http://chromadb:8000 으로 접속합니다.
+        self.client = chromadb.HttpClient(host=chroma_host, port=int(chroma_port))
+
+        # [변경 5] Chroma 초기화 시 client 주입
         self.vector_db = Chroma(
+            client=self.client,
             collection_name="history_collection",
             embedding_function=self.embedding_model,
-            persist_directory=PERSIST_DIRECTORY
         )
 
     def sync_from_json(self, entities: List[Dict[str, Any]]):
@@ -32,12 +41,20 @@ class HistoryVectorStore:
         """
         print(f"🔄 벡터 DB 동기화 시작... ({len(entities)}건)")
 
-        # 1. 기존 DB 삭제 후 재생성 (Clean Slate Strategy)
-        # 데이터 꼬임을 방지하기 위해 초기화
-        if os.path.exists(PERSIST_DIRECTORY):
+        try:
             self.vector_db.delete_collection()
+        except Exception:
+            # 컬렉션이 없으면 에러가 날 수 있으므로 무시하고 진행
+            pass
 
-            # 2. Document 객체 리스트 생성
+        # 컬렉션 삭제 후 객체 재연결 (LangChain Chroma 특성상 안전하게 재할당)
+        self.vector_db = Chroma(
+            client=self.client,
+            collection_name="history_collection",
+            embedding_function=self.embedding_model,
+        )
+
+        # 2. Document 객체 리스트 생성
         documents = []
         for item in entities:
             # [중요] 검색에 걸리게 하고 싶은 텍스트를 하나로 합칩니다.
@@ -64,12 +81,7 @@ class HistoryVectorStore:
 
         # 3. 벡터 DB에 삽입 (자동으로 임베딩 변환됨)
         if documents:
-            self.vector_db = Chroma.from_documents(
-                documents=documents,
-                embedding=self.embedding_model,
-                collection_name="history_collection",
-                persist_directory=PERSIST_DIRECTORY
-            )
+            self.vector_db.add_documents(documents)
             print("✅ 벡터 DB 동기화 완료!")
 
     def search(self, query: str, top_k: int = 3):
