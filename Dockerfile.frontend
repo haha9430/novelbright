@@ -1,28 +1,27 @@
 FROM python:3.12-slim
 
+# [핵심] 공식 이미지에서 uv 실행 파일만 복사해오기 (경로 설정 불필요)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 WORKDIR /app
 
-# 시스템 의존성 설치 (필요시)
+# 시스템 의존성 설치
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# uv 설치
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:\$PATH"
-
-# 패키지 파일 복사 및 설치
-COPY pyproject.toml .
-# (uv.lock이 있다면 아래 주석 해제)
-# COPY uv.lock .
-
 # 프로젝트 파일 복사
+# uv.lock 파일이 있다면 COPY uv.lock . 도 추가해주세요
+COPY uv.lock .
+COPY pyproject.toml .
 COPY frontend ./frontend
-COPY app ./app
-# (백엔드와 코드를 공유하는 부분이 있다면 app도 필요할 수 있음.
-#  frontend 폴더 안에만 코드가 있다면 COPY frontend ./frontend 만 하세요)
+# 만약 app 폴더도 필요하다면 아래 주석 해제
+# COPY app ./app
 
 # 의존성 설치
+# (--frozen 옵션을 빼면 락파일 없이도 설치합니다)
 RUN uv sync
 
-# [중요] Streamlit 실행 (외부 접속 허용 옵션 필수)
+# Streamlit 포트 설정
 EXPOSE 8501
+
+# 실행 명령어
 CMD ["uv", "run", "streamlit", "run", "frontend/main.py", "--server.port=8501", "--server.address=0.0.0.0"]
