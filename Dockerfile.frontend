@@ -14,7 +14,7 @@ COPY uv.lock .
 COPY pyproject.toml .
 COPY frontend ./frontend
 # 만약 app 폴더도 필요하다면 아래 주석 해제
-# COPY app ./app
+COPY app ./app
 
 # 의존성 설치
 # (--frozen 옵션을 빼면 락파일 없이도 설치합니다)
