@@ -26,4 +26,3 @@ RUN uv sync
 # [중요] Streamlit 실행 (외부 접속 허용 옵션 필수)
 EXPOSE 8501
 CMD ["uv", "run", "streamlit", "run", "frontend/main.py", "--server.port=8501", "--server.address=0.0.0.0"]
-EOF
