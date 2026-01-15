@@ -1,20 +1,72 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: backend-ingress
+  name: moneta-ingress
   namespace: moneta
   annotations:
-    kubernetes.io/ingress.class: "nginx"
+    traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
-  ingressClassName: nginx
   rules:
-    - host: novebright-moneta.duckdns.org
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: backend
-                port:
-                  number: 8880
+  - host: novebright-moneta.duckdns.org
+    http:
+      paths:
+      # [1] 백엔드로 가야 할 "진짜 주소들" (여기를 다 적어줘야 함)
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8880
+      - path: /manuscript  # /manuscript 로 시작하는 모든 요청
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8880
+      - path: /agent       # /agent 로 시작하는 모든 요청
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8880
+      - path: /docs        # Swagger UI
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8880
+      - path: /openapi.json
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8880
+      - path: /history
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8880
+      - path: /story
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 8880
+
+      # [2] 프론트엔드 (나머지 모든 경로)
+      # 백엔드 주소가 아닌 건 다 화면(Frontend)으로 보냄
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
