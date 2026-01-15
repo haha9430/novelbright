@@ -2,7 +2,7 @@ import streamlit as st
 import uuid
 from components.common import get_current_project
 from components.sidebar import render_sidebar
-from api import save_material_api, delete_material_api
+from api import save_material_api, delete_material_api, BASE_URL
 import requests
 
 
@@ -53,7 +53,9 @@ def render_materials():
                 # 삭제 버튼
                 if c2.button("🗑", key=f"del_m_{sel_mat['id']}"):
                     try:
-                        requests.delete(f"http://127.0.0.1:8000/history/material/{sel_mat['id']}")
+                        url = f"{BASE_URL}/history/material/{sel_mat['id']}"
+                        requests.delete(url)
+
                         proj['materials'].remove(sel_mat)
                         st.session_state.selected_material_id = None
                         st.toast("삭제됨")
@@ -81,7 +83,9 @@ def render_materials():
                     }
 
                     try:
-                        requests.post("http://127.0.0.1:8000/history/upsert", json=material_payload)
+                        url = f"{BASE_URL}/history/upsert"
+                        requests.post(url, json=material_payload)
+
                         st.toast("저장 완료!", icon="✅")
                     except:
                         st.error("저장 실패 (서버 연결 확인)")
