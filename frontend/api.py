@@ -199,6 +199,23 @@ def save_world_setting_api(content: str) -> bool:
 # =========================
 # 6) 자료(materials)
 # =========================
+def save_material_api(material_data: Dict[str, Any]) -> bool:
+    try:
+        path = _data_path("materials.json")
+        db = _safe_read_json(path, default={"materials": []})
+        if not isinstance(db, dict):
+            db = {"materials": []}
+        if "materials" not in db or not isinstance(db["materials"], list):
+            db["materials"] = []
+
+        db["materials"].append(material_data)
+        _safe_write_json(path, db)
+        return True
+    except Exception as e:
+        st.error(f"자료 저장 실패: {e}")
+        return False
+
+
 def delete_material_api(material_id: str) -> bool:
     try:
         path = _data_path("materials.json")
@@ -213,7 +230,6 @@ def delete_material_api(material_id: str) -> bool:
         st.error(f"자료 삭제 실패: {e}")
         return False
 
-# [수정 2] API 호출 부분에서 BASE_URL 사용
 def analyze_clio_api(current_doc, content_source):
     try:
         content_source_txt = io.BytesIO(content_source.encode("utf-8"))
@@ -234,22 +250,6 @@ def analyze_clio_api(current_doc, content_source):
 
         print(f"✅ 응답 코드: {res.status_code}")
 
-        if res.status_code == 200:
-            return res.json()
-        else:
-            st.error(f"오류: {res.text}")
-    except Exception as e:
-        st.error(f"연결 실패: {e}")
-
-def analyze_clio_api(current_doc, content_source) :
-    try:
-        content_source_txt = io.BytesIO(content_source.encode("utf-8"))
-        content_source_txt.name = f"{current_doc['title']}.txt"  # 파일명 지정 필요
-        form_data_analyzer = {"file": (content_source_txt.name, content_source_txt, "text/plain")}
-
-        # 안전하게 처리된 content_source 전송
-        res = requests.post("http://127.0.0.1:8000/manuscript/analyze", files=form_data_analyzer, data={"title": current_doc['title']})
-        print(res)
         if res.status_code == 200:
             return res.json()
         else:
