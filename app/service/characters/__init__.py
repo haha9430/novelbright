@@ -530,33 +530,29 @@ def parse_character_with_name(name: str, features: str) -> Dict[str, Any]:
 
     nm = _clean_name(name)
     if not nm:
-        print("   ❌ 이름이 없어서 에러 발생")
         raise ValueError("name is required")
 
-    # 위에서 만든 로그 빵빵한 함수 호출
     extracted = _extract_from_text(features or "")
 
-    print(f"   🔄 [병합 중] 추출된 데이터로 최종 JSON 조립 시작...")
+    print(f"   🔄 [병합 중] 최종 JSON 조립 시작...")
 
+    # ✅ 안전하게 데이터를 가져오기 위한 헬퍼 로직 적용
     final_data = {
         "name": nm,
-        "age_gender": extracted.get("age_gender", "none"),
-        "job_status": extracted.get("job_status", "none"),
-        "core_traits": extracted.get("core_traits", []),
-        "personality": extracted.get("personality", {"pros": "none", "cons": "none"}),
-        "outer_goal": extracted.get("outer_goal", "none"),
-        "inner_goal": extracted.get("inner_goal", "none"),
-        "trauma_weakness": extracted.get("trauma_weakness", "none"),
-        "speech_habit": extracted.get("speech_habit", "none"),
-        "relationships": extracted.get("relationships", []),
+        "age_gender": extracted.get("age_gender") or "none",
+        "job_status": extracted.get("job_status") or "none",
+        # core_traits가 리스트가 아니면 빈 리스트로 강제 변환
+        "core_traits": extracted.get("core_traits") if isinstance(extracted.get("core_traits"), list) else [],
+        "personality": extracted.get("personality") if isinstance(extracted.get("personality"), dict) else {"pros": "none", "cons": "none"},
+        "outer_goal": extracted.get("outer_goal") or "none",
+        "inner_goal": extracted.get("inner_goal") or "none",
+        "trauma_weakness": extracted.get("trauma_weakness") or "none",
+        "speech_habit": extracted.get("speech_habit") or "none",
+        # relationships가 리스트가 아니면 빈 리스트로 강제 변환
+        "relationships": extracted.get("relationships") if isinstance(extracted.get("relationships"), list) else [],
+        # ✅ additional_settings 누락 방지 (빈 딕셔너리라도 넣어줌)
+        "additional_settings": extracted.get("additional_settings") if isinstance(extracted.get("additional_settings"), dict) else {}
     }
-
-    # 'none'이 아닌 유효한 값이 몇 개나 들어갔는지 확인
-    valid_count = sum(1 for v in final_data.values() if v != "none" and v != [])
-    print(f"   ✅ [최종 조립 완료] 유효 데이터 개수: {valid_count} / {len(final_data)}")
-
-    # job_status가 제대로 들어갔는지 확인
-    print(f"   👉 핵심 필드 확인 (job_status): {final_data['job_status']}")
 
     return final_data
 
