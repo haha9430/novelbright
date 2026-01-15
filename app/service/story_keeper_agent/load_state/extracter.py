@@ -97,7 +97,7 @@ class PlotManager:
 
         root = _project_root()
         self.global_setting_file = root / "app" / "data" / "plot.json"
-        self.history_file = root / "app" / "service" / "story_keeper_agent" / "load_state" / "story_history.json"
+        self.history_file = root / "app" / "data" / "story_history.json"
 
         print(f"📂 plot.json: {self.global_setting_file}")
         print(f"📂 story_history.json: {self.history_file}")

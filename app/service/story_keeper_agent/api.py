@@ -55,9 +55,7 @@ def _load_story_history() -> dict:
     path = os.path.join(
         here,
         "app",
-        "service",
-        "story_keeper_agent",
-        "load_state",
+        "data",
         "story_history.json",
     )
     return _safe_read_json(path)
