@@ -126,11 +126,13 @@ kubectl create secret docker-registry ghcr-secret \
 #### 프로젝트 루트 폴더에서 이미지 빌드
 
 docker build -t moneta-backend:latest -f Dockerfile .
+
 docker build -t moneta-frontend:latest -f Dockerfile.frontend .
 
 #### 빌드한 이미지를 K3s가 인식하도록 가져오기
 
 docker save moneta-frontend:latest | sudo k3s ctr --address /run/containerd/containerd.sock images import -
+
 docker save moneta-backend:latest | sudo k3s ctr --address /run/containerd/containerd.sock images import -
 
 #### .yaml 파일 존재 폴더로 이동
