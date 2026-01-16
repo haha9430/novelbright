@@ -46,14 +46,8 @@ def load_state(episode_no: int) -> Dict[str, Any]:
 
     pvc_dir = "/app/app/data"
 
-    if os.path.exists(pvc_dir):
-        plot_path = os.path.join(pvc_dir, "plot.json")
-        history_path = os.path.join(pvc_dir, "story_history.json")
-    else:
-        # 로컬 환경용 하위 호환성 유지
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        plot_path = os.path.join(base_dir, "../../../data/plot.json")
-        history_path = os.path.join(base_dir, "story_history.json")
+    plot_path = os.path.join(pvc_dir, "plot.json")
+    history_path = os.path.join(pvc_dir, "story_history.json")
 
     plot = _read_json(plot_path, default={})
     history = _read_json(history_path, default={})
