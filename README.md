@@ -169,7 +169,9 @@ kubectl logs -l app=frontend -n moneta -f
 
 ## 데모 또는 스크린샷
 
-https://github.com/haha9430/novelbright/Novelbright_시연영상.mp4
+https://github.com/haha9430/novelbright/blob/main/NovelBright_%EC%8B%9C%EC%97%B0%EC%98%81%EC%83%81.mp4
+
+위 링크에서 가운데 View raw 클릭하여 다운로드 후 시청 가능합니다.
 
 ## 프로젝트 구조
 
