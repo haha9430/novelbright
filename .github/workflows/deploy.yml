@@ -2,7 +2,7 @@ name: Deploy to k8s
 
 on:
   push:
-    branches: [ refactor/*, main ]
+    branches: [ main ]
 
 jobs:
   build:
@@ -49,6 +49,16 @@ jobs:
             ghcr.io/${{ env.OWNER_LC }}/moneta-backend:${{ env.IMAGE_TAG }}
             ghcr.io/${{ env.OWNER_LC }}/moneta-backend:latest
 
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.frontend # 프론트엔드 전용 Dockerfile 지정
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER_LC }}/moneta-frontend:${{ env.IMAGE_TAG }}
+            ghcr.io/${{ env.OWNER_LC }}/moneta-frontend:latest
+
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -60,19 +70,22 @@ jobs:
             
             # 최신 매니페스트 파일 가져오기
             git reset --hard
-            git pull origin refactor/deploy
+            git pull origin main
             
             cd infra/k8s/application
             
-            # [수정] 배포할 이미지 주소 설정
-            NEW_IMAGE="ghcr.io/${{ env.OWNER_LC }}/moneta-backend:${{ env.IMAGE_TAG }}"
+            # [수정] 배포할 이미지 주소 설정s
+            BACKEND_IMAGE="ghcr.io/${{ env.OWNER_LC }}/moneta-backend:${{ env.IMAGE_TAG }}"
+            FRONTEND_IMAGE="ghcr.io/${{ env.OWNER_LC }}/moneta-frontend:${{ env.IMAGE_TAG }}"
             
-            echo "Updating deployment to image: $NEW_IMAGE"
+            echo "Updating deployment to backend image: $BACKEND_IMAGE"
+            echo "Updating deployment to frontend image: $FRONTEND_IMAGE"
             
-            # [수정] 더 정확하게 backend 이미지 부분만 교체
-            sed -i "s|image: ghcr.io/${{ env.OWNER_LC }}/moneta-backend:.*|image: $NEW_IMAGE|g" 04-backend.yaml
+            sed -i "s|image: ghcr.io/${{ env.OWNER_LC }}/moneta-backend:.*|image: $BACKEND_IMAGE|g" 04-backend.yaml
+            sed -i "s|image: ghcr.io/${{ env.OWNER_LC }}/moneta-frontend:.*|image: $FRONTEND_IMAGE|g" 06-frontend.yaml
             
             kubectl apply -f .
             
             # 롤아웃 상태 확인 (성공할 때까지 대기)
             kubectl rollout status deployment/backend -n moneta
+            kubectl rollout status deployment/frontend -n moneta

@@ -15,8 +15,8 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: moneta-frontend:latest
-        imagePullPolicy: Never          # EC2 로컬에서 빌드한 이미지 사용
+        image: ghcr.io/haha9430/moneta-frontend:latest
+        imagePullPolicy: Always  # GHCR에서 새 이미지를 항상 받아오도록 설정
         ports:
         - containerPort: 8501           # [중요] Streamlit 기본 포트
         env:
