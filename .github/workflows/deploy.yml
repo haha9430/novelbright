@@ -2,7 +2,7 @@ name: Deploy to k8s
 
 on:
   push:
-    branches: [ refactor/* ]
+    branches: [ refactor/*, main ]
 
 jobs:
   build:
