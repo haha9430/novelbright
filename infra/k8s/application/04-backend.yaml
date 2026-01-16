@@ -26,8 +26,8 @@ spec:
 
       containers:
       - name: backend
-        image: moneta-backend:latest
-        imagePullPolicy: Never
+        image: ghcr.io/haha9430/moneta-backend:latest # [수정] GHCR 경로
+        imagePullPolicy: Always
         ports:
         - containerPort: 8880
         envFrom:
