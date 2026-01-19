@@ -69,9 +69,41 @@ def render_characters(proj):
     col_add, col_file = st.columns([1, 2], gap="small")
 
     with col_add:
-        if st.button("인물 직접 추가", use_container_width=True):
-            # add_character_modal 함수 로직 (기존 코드에 있다면 유지)
-            pass
+        # 🟢 'pass' 대신 입력 창이 뜨는 popover를 사용합니다.
+        with st.popover("➕ 인물 직접 추가", use_container_width=True):
+            st.markdown("### 새로운 인물 추가")
+            new_name = st.text_input("이름", placeholder="예: 이도훈")
+            new_job = st.text_input("직업/신분", placeholder="예: 대한민국 육군 장교")
+            new_age = st.text_input("나이/성별", placeholder="예: 20대 남성")
+
+            # 버튼 클릭 시 백엔드 API 호출
+            if st.button("💾 저장하기", use_container_width=True, kind="primary"):
+                if not new_name.strip():
+                    st.error("이름은 필수입니다!")
+                else:
+                    # 저장할 데이터 구조 생성
+                    new_data = {
+                        "name": new_name,
+                        "job_status": new_job or "none",
+                        "age_gender": new_age or "none",
+                        "core_traits": [],
+                        "personality": {"pros": "none", "cons": "none"},
+                        "relationships": [],
+                        "outer_goal": "none",
+                        "inner_goal": "none",
+                        "trauma_weakness": "none",
+                        "speech_habit": "none"
+                    }
+
+                    # api.py에 정의된 save_character_api를 호출합니다.
+                    # 첫 번째 인자는 이름, 두 번째는 데이터 딕셔너리입니다.
+                    success = save_character_api(new_name, new_data)
+
+                    if success:
+                        st.toast(f"✅ {new_name} 추가 완료!", icon="🎉")
+                        st.rerun()  # 👈 저장 즉시 화면을 갱신해서 카드를 띄웁니다.
+                    else:
+                        st.error("서버 저장에 실패했습니다. API 로그를 확인하세요.")
 
     with col_file:
         with st.popover("파일로 일괄 추가", use_container_width=True):

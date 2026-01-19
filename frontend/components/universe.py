@@ -1,5 +1,8 @@
 import streamlit as st
 import uuid
+import tempfile
+import os
+from pathlib import Path
 
 from components.common import get_current_project
 from components.sidebar import render_sidebar
@@ -56,20 +59,41 @@ def _render_worldview_tab(proj):
 
         if uploaded_file and st.button("세계관 분석 및 추가", use_container_width=True):
             with st.spinner("파일을 분석하여 세계관 DB에 저장 중입니다..."):
+                tmp_path = ""
                 try:
-                    content = FileProcessor.load_file_content(uploaded_file)
+                    # UploadedFile -> 임시 파일로 저장 (FileProcessor는 경로를 받는 구조라서)
+                    suffix = Path(uploaded_file.name).suffix or ".tmp"
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                        tmp.write(uploaded_file.getbuffer())
+                        tmp_path = tmp.name
+
+                    content = FileProcessor.load_file_content(tmp_path)
+
                     if content and not content.startswith("[Error]"):
                         success, msg = ingest_file_to_backend(content, "worldview")
                         if success:
-                            proj["worldview"] = (proj.get("worldview", "").rstrip() + "\n\n" + content.strip()).strip()
+                            proj["worldview"] = (
+                                proj.get("worldview", "").rstrip()
+                                + "\n\n"
+                                + content.strip()
+                            ).strip()
                             st.success("세계관 자료가 성공적으로 추가되었습니다!")
                             st.rerun()
                         else:
                             st.error(msg or "서버 전송 실패")
                     else:
                         st.error(content if content else "파일 내용을 읽을 수 없습니다.")
+
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
+
+                finally:
+                    # 임시파일 정리
+                    if tmp_path:
+                        try:
+                            os.remove(tmp_path)
+                        except Exception:
+                            pass
 
     st.divider()
 
