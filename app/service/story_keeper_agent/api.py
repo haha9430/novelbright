@@ -52,14 +52,7 @@ def _extract_world_from_plot(plot_config: dict) -> dict:
 def _load_story_history() -> dict:
     # ✅ 핵심: load_state 폴더의 story_history.json을 본다
     here = os.getcwd()
-    path = os.path.join(
-        here,
-        "app",
-        "service",
-        "story_keeper_agent",
-        "load_state",
-        "story_history.json",
-    )
+    path = os.path.join(here, "app", "data", "story_history.json")
     return _safe_read_json(path)
 
 

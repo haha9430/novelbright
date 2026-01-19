@@ -47,7 +47,7 @@ def load_state(episode_no: int) -> Dict[str, Any]:
     pvc_dir = "/app/app/data"
 
     plot_path = os.path.join(pvc_dir, "plot.json")
-    history_path = os.path.join(pvc_dir, "story_history.json")
+    history_path = os.path.join(pvc_dir, "../../../data/story_history.json")
 
     plot = _read_json(plot_path, default={})
     history = _read_json(history_path, default={})

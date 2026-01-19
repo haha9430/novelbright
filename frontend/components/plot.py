@@ -17,15 +17,11 @@ def _candidate_history_paths() -> list[Path]:
     root = _project_root()
     cwd = Path.cwd()
 
-    # ✅ 핵심: load_state 쪽을 1순위로 추가
-    p1 = root / "app" / "service" / "story_keeper_agent" / "load_state" / "story_history.json"
-    p2 = cwd / "app" / "service" / "story_keeper_agent" / "load_state" / "story_history.json"
-
     # 기존 app/data도 혹시 몰라 유지
     p3 = root / "app" / "data" / "story_history.json"
     p4 = cwd / "app" / "data" / "story_history.json"
 
-    return [p1, p2, p3, p4]
+    return [p3, p4]
 
 
 def _pick_history_path() -> Path | None:
