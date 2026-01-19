@@ -264,3 +264,18 @@ def ingest_file_to_backend(text: str, upload_type: str) -> Tuple[bool, str]:
         return False, f"서버 응답 오류 ({response.status_code}): {response.text}"
     except Exception as e:
         return False, f"연결 오류 발생: {str(e)}"
+
+def get_characters_api(timeout: int = 8) -> Dict[str, Any]:
+    """
+    백엔드로부터 등장인물 전체 데이터를 가져옵니다.
+    """
+    url = f"{BASE_URL}/story/characters"
+    try:
+        response = requests.get(url, timeout=timeout)
+        if response.status_code == 200:
+            # 백엔드가 보내준 JSON(딕셔너리 형태)을 그대로 반환
+            return response.json()
+        return {}
+    except Exception as e:
+        print(f"⚠️ 캐릭터 API 호출 오류: {e}")
+        return {}
