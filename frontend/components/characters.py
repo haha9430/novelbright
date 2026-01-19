@@ -77,7 +77,7 @@ def render_characters(proj):
             new_age = st.text_input("나이/성별", placeholder="예: 20대 남성")
 
             # 버튼 클릭 시 백엔드 API 호출
-            if st.button("💾 저장하기", use_container_width=True, kind="primary"):
+            if st.button("💾 저장하기", use_container_width=True, type="primary"):
                 if not new_name.strip():
                     st.error("이름은 필수입니다!")
                 else:

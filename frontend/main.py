@@ -66,12 +66,12 @@ common_css = """
     }
 
     /* Primary 버튼 (노벨라 스타일 초록색) */
-    div.stButton > button[kind="primary"] {
+    div.stButton > button[type="primary"] {
         background-color: #009688 !important;
         border-color: #009688 !important;
         color: white !important;
     }
-    div.stButton > button[kind="primary"]:hover {
+    div.stButton > button[type="primary"]:hover {
         background-color: #00796b !important;
         border-color: #00796b !important;
     }
