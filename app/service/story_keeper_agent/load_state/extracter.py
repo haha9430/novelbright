@@ -360,6 +360,7 @@ class StoryHistoryManager:
         return self.pm.summarize_and_save(int(episode_no), full_text)
 
 
+
 # =========================================================
 # 📢 [신규] ingest_service 연결용 함수 (맨 아래 추가)
 # =========================================================
