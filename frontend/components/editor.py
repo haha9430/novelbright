@@ -156,13 +156,16 @@ def render_editor():
         with st.container(border=True):
             ep_num = current_doc.get("episode_no", 1)
 
-            # 민감도 선택
-            severity_option = st.selectbox(
+            # ✅ [수정됨] 민감도 선택 (슬라이더로 복구)
+            # Low -> High 순서로 배치하여 직관적으로 변경
+            selected_sev_label = st.select_slider(
                 "분석 민감도(Severity)",
-                options=["high", "medium", "low"],
-                index=0,
+                options=["Low", "Medium", "High"],
+                value="Medium",
                 key="moneta_severity_select",
             )
+            # 백엔드에는 소문자로 전송 (low, medium, high)
+            severity_option = selected_sev_label.lower()
 
             col_sk, col_clio = st.columns([1, 1], gap="small")
 
@@ -177,7 +180,6 @@ def render_editor():
                             severity=severity_option,
                         )
 
-                        # [Fix] API가 None을 반환하면 빈 리스트로 처리
                         if api_res is None:
                             api_res = []
 
@@ -194,7 +196,6 @@ def render_editor():
                     with st.spinner("클리오가 역사적 사실을 대조하고 있습니다..."):
                         api_res = analyze_clio_api(current_doc, content_source)
 
-                        # [Fix] API가 None을 반환하면 빈 딕셔너리로 처리
                         if api_res is None:
                             api_res = {}
 
@@ -211,7 +212,6 @@ def render_editor():
         # ---------------------------------------------------------
         doc_data = st.session_state.analysis_results.get(current_doc['id'], {})
 
-        # [Fix] 가져온 값이 None이면 빈 구조체로 대체 (서버 연결 실패 시 방어)
         sk_results = doc_data.get("sk")
         if sk_results is None: sk_results = []
 
@@ -224,6 +224,7 @@ def render_editor():
             if isinstance(sk_results, list):
                 for m in sk_results:
                     if not isinstance(m, dict): continue
+                    # severity 필터 적용 (API 결과와 슬라이더 값 비교)
                     if str(m.get("severity", "medium")).lower() == severity_option:
                         filtered_sk_results.append(m)
 
@@ -268,7 +269,6 @@ def render_editor():
             label = f"클리오 결과"
             with st.expander(label, expanded=(st.session_state.last_opened_expander == "clio")):
 
-                # [Fix] clio_results가 딕셔너리인지 확실히 확인 후 사용
                 history_items = []
                 if isinstance(clio_results, dict):
                     history_items = clio_results.get("historical_context", [])
