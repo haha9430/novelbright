@@ -7,6 +7,9 @@ import struct
 import olefile
 from docx import Document
 import fitz  # PyMuPDF
+import re
+import zipfile
+import xml.etree.ElementTree as ET
 from components.common import get_current_project
 from components.sidebar import render_sidebar
 
@@ -93,7 +96,7 @@ def render_materials():
                 with st.expander("파일에서 내용 불러오기 (HWP, PDF, Word)", expanded=False):
                     uploaded_file = st.file_uploader(
                         "파일을 업로드하면 텍스트를 추출하여 아래 내용에 덮어씁니다.",
-                        type=["txt", "md", "pdf", "docx", "hwp"],
+                        type=["txt", "md", "pdf", "docx", "hwp", "hwpx"],
                         key="mat_uploader"
                     )
 
@@ -149,96 +152,87 @@ def render_materials():
 # =================================================
 # [Helper] 파일 파싱 함수 정의
 # =================================================
-def get_hwp_text(file_obj):
+def get_hwpx_text(file_obj):
     """
-    HWP 파일에서 텍스트를 추출하는 헬퍼 함수 (HWP 5.0 이상)
+    HWPX 파일(Zip+XML 구조)에서 텍스트를 추출하는 함수
     """
+    text = ""
     try:
-        # [중요] 파일 포인터를 맨 앞으로 초기화해야 olefile이 읽을 수 있음
         file_obj.seek(0)
+        with zipfile.ZipFile(file_obj) as zf:
+            # HWPX는 내용이 'Contents/section0.xml', 'section1.xml' ... 에 들어있음
+            # 파일 목록에서 섹션 파일만 찾아서 순서대로 정렬
+            section_files = sorted(
+                [f for f in zf.namelist() if f.startswith('Contents/section') and f.endswith('.xml')]
+            )
 
-        f = olefile.OleFileIO(file_obj)
-        dirs = f.listdir()
+            if not section_files:
+                return None
 
-        # HWP 파일 구조 확인
-        if ["FileHeader"] not in dirs or ["BodyText"] not in dirs:
-            st.warning("지원되지 않는 HWP 포맷이거나 암호화된 파일입니다.")
-            return None
+            # 각 섹션 XML을 파싱하여 텍스트 추출
+            for filename in section_files:
+                xml_data = zf.read(filename)
+                root = ET.fromstring(xml_data)
 
-        sections = [d[1] for d in dirs if d[0] == "BodyText"]
-        text = ""
-
-        for section in sections:
-            bodytext = f.openstream("BodyText/" + section).read()
-
-            # 압축 해제 시도
-            try:
-                unpacked_data = zlib.decompress(bodytext, -15)
-                decoded_text = unpacked_data.decode('utf-16-le')
-                text += decoded_text.replace("\r", "\n").replace("\x00", "")
-            except Exception:
-                # 압축 해제 실패 시 건너뜀
-                continue
+                # HWPX의 텍스트 태그는 <hp:t> 입니다.
+                # 네임스페이스 처리가 번거로우므로, 모든 태그를 순회하며 't' 태그만 찾습니다.
+                # (http://www.hancom.co.kr/hwpml/2011/paragraph 네임스페이스)
+                for neighbor in root.iter():
+                    if neighbor.tag.endswith('}t'): # <hp:t> 태그 확인
+                        if neighbor.text:
+                            text += neighbor.text + "\n"
 
         return text
-
     except Exception as e:
-        # 구체적인 에러 메시지 확인용
-        print(f"HWP Parsing Error: {e}")
+        print(f"HWPX Parsing Error: {e}")
         return None
 
 
 def parse_file_content(uploaded_file):
-    """
-    업로드된 파일 객체를 받아 텍스트를 추출하여 반환
-    """
+    # 확장자 소문자로 변환
     file_ext = uploaded_file.name.split('.')[-1].lower()
     text = ""
 
     try:
-        uploaded_file.seek(0)
-        # 1. TXT / MD 파일
+        uploaded_file.seek(0) # 포인터 초기화 필수
+
+        # 1. TXT / MD
         if file_ext in ['txt', 'md']:
-            # UTF-8 시도 후 실패 시 EUC-KR(한글) 시도
             raw_data = uploaded_file.read()
             try:
                 text = raw_data.decode('utf-8')
             except UnicodeDecodeError:
                 text = raw_data.decode('euc-kr')
 
-        # 2. PDF 파일
+        # 2. PDF
         elif file_ext == 'pdf':
             with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
                 for page in doc:
                     text += page.get_text()
+            if text: text = re.sub(r'(?<![\.\?\!])\n', ' ', text)
 
-            # ---------------------------------------------------------
-            # [✅ 추가된 로직] PDF 줄바꿈 보정 (전처리)
-            # ---------------------------------------------------------
-            if text:
-                # 원리: "마침표(.)나 물음표(?), 느낌표(!)가 아닌 글자" 뒤에 오는 줄바꿈(\n)을 공백으로 치환
-                # 이렇게 하면 문장 중간에 잘린 줄바꿈은 사라지고, 진짜 문단 바꿈은 유지됩니다.
-                text = re.sub(r'(?<![\.\?\!])\n', ' ', text)
-
-                # 혹시 모를 다중 공백 제거 (선택사항)
-                text = re.sub(r'  +', ' ', text)
-
-        # 3. Word (DOCX) 파일
+        # 3. Word (DOCX)
         elif file_ext == 'docx':
             doc = Document(uploaded_file)
             for para in doc.paragraphs:
                 text += para.text + "\n"
 
-        # 4. HWP (한글) 파일
+        # 4. HWP (구버전)
         elif file_ext == 'hwp':
             text = get_hwp_text(uploaded_file)
 
+        # 5. [NEW] HWPX (신버전) 추가
+        elif file_ext == 'hwpx':
+            text = get_hwpx_text(uploaded_file)
+
         else:
-            st.error("지원하지 않는 파일 형식입니다.")
+            return None
+
+        if text is None:
             return None
 
         return text.strip()
 
     except Exception as e:
-        st.error(f"파일 처리 중 오류가 발생했습니다: {e}")
+        st.error(f"파일 처리 중 오류 발생 ({file_ext}): {e}")
         return None
