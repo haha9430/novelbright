@@ -212,13 +212,12 @@ class ManuscriptAnalyzer:
         }
 
     def _extract_search_queries(self, text: str) -> List[Dict[str, str]]:
+        # [수정됨] 토큰 압축(_compress_text) 과정을 제거하고 원문을 바로 사용합니다.
 
-        # [✅ 여기가 변경 포인트]
-        # 청킹된 text를 받아서 -> 압축(compressed_text) -> LLM 전송
-        compressed_text = self._compress_text(text)
+        # compressed_text = self._compress_text(text)  <-- 이 부분을 삭제하거나 주석 처리
 
-        # 로그로 압축 효과 확인 (선택 사항)
-        # print(f"📉 토큰 압축: {len(text)}자 -> {len(compressed_text)}자")
+        # 로그 (선택 사항)
+        # print(f"📄 명제 추출 요청 (길이: {len(text)})")
 
         prompt = """
         당신은 역사 소설의 '미세 고증 감별사'입니다.
@@ -247,8 +246,8 @@ class ManuscriptAnalyzer:
         try:
             response = self.llm.invoke([
                 SystemMessage(content=prompt),
-                # [✅ 변경] 원본 text 대신 압축된 텍스트 전송
-                HumanMessage(content=f"Text: {compressed_text[:3500]}")
+                # [중요] 압축된 텍스트 대신 원본 'text'를 그대로 넣습니다.
+                HumanMessage(content=f"Text: {text[:4000]}")
             ])
             return self._parse_json_garbage(response.content)
         except Exception as e:
