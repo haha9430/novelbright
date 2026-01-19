@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-BASE_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+BASE_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 
 
 def _project_root() -> Path:
