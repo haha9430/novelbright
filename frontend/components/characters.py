@@ -51,13 +51,24 @@ def _ensure_edit_state():
         st.session_state.editing_char_text = ""
 
 def render_characters(proj=None):
-    if proj is None:
-        proj = get_current_project()
-        if not proj:
-            st.warning("프로젝트를 찾을 수 없습니다.")
-            return
+    if uploaded_file and st.button("🚀 파일 처리 및 AI 분석 시작", use_container_width=True):
+        with st.spinner("파일을 읽고 캐릭터를 추출 중입니다..."):
+            # 1. 텍스트 추출
+            content = FileProcessor.load_file_content(uploaded_file)
 
-    _ensure_edit_state()
+            if content and not content.startswith("[Error]"):
+                # 2. 백엔드 전송 및 AI 분석
+                success = ingest_file_to_backend(content, "character")
+
+                if success:
+                    # [추가] 성공 알림 및 화면 새로고침
+                    st.success("✅ 캐릭터 분석 및 저장이 완료되었습니다!")
+                    st.rerun()
+                else:
+                    # [추가] 실패 원인 표시
+                    st.error("❌ 서버 분석에 실패했습니다. 백엔드 로그를 확인하세요.")
+            else:
+                st.error("❌ 파일에서 텍스트를 읽을 수 없습니다.")
 
     # 상단 액션 바
     col_add, col_upload = st.columns([1, 2], vertical_alignment="bottom")
