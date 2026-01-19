@@ -55,12 +55,26 @@ def render_characters(proj):
             )
 
             # FileProcessor 및 백엔드 전송 로직
-            # 🚀 파일 처리 및 AI 분석 시작 버튼 로직
+            # [수정할 부분] 🚀 파일 처리 및 AI 분석 시작 버튼 로직
             if uploaded_file and st.button("🚀 파일 처리 및 AI 분석 시작", use_container_width=True):
                 with st.spinner("파일을 읽고 캐릭터를 추출 중입니다..."):
                     try:
-                        # 1. 텍스트 추출 (FileProcessor 사용)
-                        content = FileProcessor.load_file_content(uploaded_file)
+                        # [해결 방법] Streamlit 업로드 파일을 임시로 저장하여 경로를 만듭니다.
+                        # 만약 FileProcessor가 텍스트를 직접 처리하지 못한다면 아래 방식을 권장합니다.
+
+                        import tempfile
+
+                        # 임시 파일을 생성하여 uploaded_file의 내용을 씁니다.
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{uploaded_file.name}") as tmp_file:
+                            tmp_file.write(uploaded_file.getvalue())
+                            tmp_path = tmp_file.name
+
+                        # 1. 이제 '파일 객체'가 아닌 '파일 경로(str)'를 전달합니다.
+                        content = FileProcessor.load_file_content(tmp_path)
+
+                        # 사용 후 임시 파일 삭제 (선택 사항)
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
 
                         if content and not str(content).startswith("[Error]"):
                             # [핵심] 성공 여부와 상세 메시지를 동시에 받음
@@ -70,11 +84,12 @@ def render_characters(proj):
                                 st.success(f"✅ {msg}")
                                 st.rerun()
                             else:
-                                # 이제 백엔드에서 왜 실패했는지(예: 경로 오류 등)를 화면에 띄워줍니다.
                                 st.error(f"❌ 분석 실패: {msg}")
                         else:
                             st.error(f"❌ 파일 읽기 실패: {content}")
+
                     except Exception as e:
+                        # 여기서 'argument should be a str...' 에러가 났던 것입니다.
                         st.error(f"⚠️ 시스템 오류 발생: {e}")
 
     st.divider()
