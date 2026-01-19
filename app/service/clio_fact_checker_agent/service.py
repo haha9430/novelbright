@@ -171,100 +171,100 @@ class ManuscriptAnalyzer:
                             item['start_index'] = -1
                             item['end_index'] = -1
 
-                        all_query_items[kw] = item
+                all_query_items[kw] = item
 
-                        print(f"   -> 총 {len(all_query_items)}개의 검색 후보 추출됨")
+        print(f"   -> 총 {len(all_query_items)}개의 검색 후보 추출됨")
 
-                        known_settings = []
-                        historical_context = []
+        known_settings = []
+        historical_context = []
 
-                        # [변경점 1] 검증 대기열 생성
-                        verification_queue = []
+        # [변경점 1] 검증 대기열 생성
+        verification_queue = []
 
-                        # 2. 검색 수행 (검증은 하지 않고 데이터만 모음)
-                        for keyword, item_data in all_query_items.items():
-                            query_string = item_data['search_query']
-                            origin_sent = item_data.get('original_sentence', '')
+        # 2. 검색 수행 (검증은 하지 않고 데이터만 모음)
+        for keyword, item_data in all_query_items.items():
+            query_string = item_data['search_query']
+            origin_sent = item_data.get('original_sentence', '')
 
-                            # 허구 필터링
-                            is_fiction = False
-                            for fiction_term in self.setting_keywords:
-                                if fiction_term in keyword or keyword in fiction_term:
-                                    is_fiction = True
-                                    break
+            # 허구 필터링
+            is_fiction = False
+            for fiction_term in self.setting_keywords:
+                if fiction_term in keyword or keyword in fiction_term:
+                    is_fiction = True
+                    break
 
-                            if is_fiction:
-                                known_settings.append(keyword)
-                                continue
+            if is_fiction:
+                known_settings.append(keyword)
+                continue
 
-                            print(f"🔍 검색 수행: '{keyword}'")
+            print(f"🔍 검색 수행: '{keyword}'")
 
-                            # Step A: 로컬 DB
-                            search_data = self._check_local_db(keyword)
+            # Step A: 로컬 DB
+            search_data = self._check_local_db(keyword)
 
-                            # Step B: 웹 검색
-                            if not search_data:
-                                search_data = self._search_web(query_string)
-                                time.sleep(0.1)  # 검색 API 속도 조절
+            # Step B: 웹 검색
+            if not search_data:
+                search_data = self._search_web(query_string)
+                time.sleep(0.1)  # 검색 API 속도 조절
 
-                            # Step C: 검색 결과가 있다면 큐에 적재
-                            if search_data:
-                                # 검증에 필요한 모든 정보를 패키징
-                                verification_queue.append({
-                                    "keyword": keyword,
-                                    "query": query_string,
-                                    "content": search_data['content'],  # 검색된 긴 본문
-                                    "context": origin_sent,  # 소설 속 원문 문장
-                                    "item_data": item_data,  # 원본 아이템 데이터 (위치 정보 등)
-                                    "search_source": search_data.get('source', 'Unknown')
-                                })
+            # Step C: 검색 결과가 있다면 큐에 적재
+            if search_data:
+                # 검증에 필요한 모든 정보를 패키징
+                verification_queue.append({
+                    "keyword": keyword,
+                    "query": query_string,
+                    "content": search_data['content'],  # 검색된 긴 본문
+                    "context": origin_sent,  # 소설 속 원문 문장
+                    "item_data": item_data,  # 원본 아이템 데이터 (위치 정보 등)
+                    "search_source": search_data.get('source', 'Unknown')
+                })
 
-                        # 3. [변경점 2] 일괄 검증 (Batch Verification)
-                        if verification_queue:
-                            print(f"🚀 총 {len(verification_queue)}건에 대해 일괄 팩트체크를 수행합니다...")
+        # 3. [변경점 2] 일괄 검증 (Batch Verification)
+        if verification_queue:
+            print(f"🚀 총 {len(verification_queue)}건에 대해 일괄 팩트체크를 수행합니다...")
 
-                            # 배치 사이즈 설정 (한 번에 너무 많이 보내면 토큰 초과/답변 품질 저하 우려)
-                            BATCH_SIZE = 5
+            # 배치 사이즈 설정 (한 번에 너무 많이 보내면 토큰 초과/답변 품질 저하 우려)
+            BATCH_SIZE = 5
 
-                            for i in range(0, len(verification_queue), BATCH_SIZE):
-                                batch_items = verification_queue[i: i + BATCH_SIZE]
-                                print(f"   -> Batch {i // BATCH_SIZE + 1} 처리 중 ({len(batch_items)}건)...")
+            for i in range(0, len(verification_queue), BATCH_SIZE):
+                batch_items = verification_queue[i: i + BATCH_SIZE]
+                print(f"   -> Batch {i // BATCH_SIZE + 1} 처리 중 ({len(batch_items)}건)...")
 
-                                # LLM 호출
-                                verified_results = self._verify_batch_relevance(batch_items)
+                # LLM 호출
+                verified_results = self._verify_batch_relevance(batch_items)
 
-                                # 결과 매핑
-                                for item in batch_items:
-                                    kw = item['keyword']
+                # 결과 매핑
+                for item in batch_items:
+                    kw = item['keyword']
 
-                                    # LLM 결과에서 해당 키워드에 대한 검증 결과 가져오기
-                                    ver_res = verified_results.get(kw)
+                    # LLM 결과에서 해당 키워드에 대한 검증 결과 가져오기
+                    ver_res = verified_results.get(kw)
 
-                                    if ver_res and ver_res.get('is_relevant') and ver_res.get('is_positive') is not None:
-                                        # 검증 결과가 유효한 경우만 리스트에 추가
-                                        final_obj = {
-                                            "keyword": kw,
-                                            "content": item['content'],
-                                            "source": item['search_source'],
-                                            "is_relevant": True,
-                                            "is_positive": ver_res['is_positive'],
-                                            "reason": ver_res['reason'],
-                                            "original_sentence": item['context'],
-                                            "start_index": item['item_data'].get('start_index'),
-                                            "end_index": item['item_data'].get('end_index')
-                                        }
-                                        historical_context.append(final_obj)
-
-                                        status = "✅ 통과" if ver_res['is_positive'] else "⚠️ 오류 의심"
-                                        print(f"      [{status}] {kw}: {ver_res['reason']}")
-                                    else:
-                                        print(f"      [🗑️ 탈락] {kw}: 관련 없음 혹은 데이터 부족")
-
-                        return {
-                            "found_entities_count": len(all_query_items),
-                            "setting_terms_found": list(set(known_settings)),
-                            "historical_context": historical_context
+                    if ver_res and ver_res.get('is_relevant') and ver_res.get('is_positive') is not None:
+                        # 검증 결과가 유효한 경우만 리스트에 추가
+                        final_obj = {
+                            "keyword": kw,
+                            "content": item['content'],
+                            "source": item['search_source'],
+                            "is_relevant": True,
+                            "is_positive": ver_res['is_positive'],
+                            "reason": ver_res['reason'],
+                            "original_sentence": item['context'],
+                            "start_index": item['item_data'].get('start_index'),
+                            "end_index": item['item_data'].get('end_index')
                         }
+                        historical_context.append(final_obj)
+
+                        status = "✅ 통과" if ver_res['is_positive'] else "⚠️ 오류 의심"
+                        print(f"      [{status}] {kw}: {ver_res['reason']}")
+                    else:
+                        print(f"      [🗑️ 탈락] {kw}: 관련 없음 혹은 데이터 부족")
+
+        return {
+            "found_entities_count": len(all_query_items),
+            "setting_terms_found": list(set(known_settings)),
+            "historical_context": historical_context
+        }
 
     def _extract_search_queries(self, text: str) -> List[Dict[str, str]]:
         """
