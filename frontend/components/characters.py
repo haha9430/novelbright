@@ -8,7 +8,7 @@ from components.common import get_current_project, add_character_modal
 from components.sidebar import render_sidebar
 
 # [수정] api.py 및 공용 모듈에서 필요한 함수들만 정확히 Import
-from frontend.api import save_character_api, ingest_file_to_backend
+from api import save_character_api, ingest_file_to_backend
 from app.common.file_input import FileProcessor # parse_file_content 대신 프로젝트 공용 모듈 사용
 
 def _find_project_root() -> Path:
