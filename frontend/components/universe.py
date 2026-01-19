@@ -1,6 +1,5 @@
 import streamlit as st
 import uuid
-import datetime
 
 from components.common import get_current_project
 from components.sidebar import render_sidebar
@@ -103,22 +102,17 @@ def _normalize_history_items(history: dict) -> list[tuple[int, dict]]:
 
 
 def _fetch_and_cache_history(show_toast: bool = True) -> bool:
-    """
-    GET /story/history 호출해서 세션 캐시에 저장
-    """
     raw, err = get_story_history_api()
     if err:
         if show_toast:
             st.toast(f"불러오기 실패: {err}", icon="⚠️")
         return False
 
-    # 백엔드가 {"history": {...}}로 주는 경우 / dict 그대로 주는 경우 둘 다 처리
     history = raw.get("history") if isinstance(raw, dict) and "history" in raw else raw
     if not isinstance(history, dict):
         history = {}
 
     st.session_state.story_history_cache = history
-    st.session_state.story_history_last_fetch = datetime.datetime.now().strftime("%H:%M:%S")
 
     if show_toast:
         st.toast("히스토리 불러오기 완료", icon="✅")
@@ -131,10 +125,7 @@ def _render_plot_tab(proj):
 
     if "story_history_cache" not in st.session_state:
         st.session_state.story_history_cache = {}
-    if "story_history_last_fetch" not in st.session_state:
-        st.session_state.story_history_last_fetch = ""
 
-    # ✅ 히스토리 불러오기 버튼
     c1, c2 = st.columns([8.5, 1.5], vertical_alignment="bottom")
     with c1:
         st.empty()
@@ -143,24 +134,17 @@ def _render_plot_tab(proj):
             _fetch_and_cache_history(show_toast=True)
             st.rerun()
 
-    # ✅ 처음 들어오면 자동 1회 로드
     if not st.session_state.story_history_cache:
         _fetch_and_cache_history(show_toast=False)
 
     history = st.session_state.story_history_cache or {}
-    last_fetch = st.session_state.story_history_last_fetch or ""
 
     if not history:
         st.info("아직 요약 히스토리가 없습니다.")
-        if last_fetch:
-            st.caption(f"마지막 불러오기: {last_fetch}")
         return
-
-    st.caption(f"마지막 불러오기: {last_fetch}")
 
     items = _normalize_history_items(history)
 
-    # ✅ 에피소드별 요약 렌더
     for ep_no, item in items:
         title = str(item.get("title", "")).strip()
         summary = str(item.get("summary", "")).strip()

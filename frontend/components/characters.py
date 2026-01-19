@@ -7,6 +7,7 @@ import json
 
 def load_characters_from_file():
     # 🔴 백엔드 DB_PATH와 완벽히 일치하는 절대 경로로 수정했습니다.
+    print("load_characters_from_file() 동작")
     file_path = "/app/app/data/characters.json"
 
     if os.path.exists(file_path):
@@ -16,6 +17,9 @@ def load_characters_from_file():
                 # 데이터가 딕셔너리 형태면 리스트로 변환하여 반환
                 if isinstance(data, dict):
                     return list(data.values())
+
+                print("load_characters_from_file() : ")
+                print(data)
                 return data
         except Exception as error:
             print(f"❌ 파일 읽기 에러: {error}")
