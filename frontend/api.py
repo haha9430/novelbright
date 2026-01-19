@@ -257,3 +257,15 @@ def ingest_file_to_backend(text: str, upload_type: str) -> Tuple[bool, str]:
         return False, f"서버 응답 오류 ({response.status_code}): {response.text}"
     except Exception as e:
         return False, f"연결 오류 발생: {str(e)}"
+
+# frontend/api.py 에 추가
+def get_characters_api():
+    try:
+        import requests
+        # 백엔드 포트(8880)와 엔드포인트를 맞춥니다.
+        response = requests.get("http://backend:8880/story/characters", timeout=10)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        print(f"❌ 캐릭터 정보 가져오기 실패: {e}")
+    return {}

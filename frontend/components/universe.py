@@ -10,14 +10,15 @@ try:
     from app.common.file_input import FileProcessor
 except ImportError:
     def ingest_file_to_backend(*args, **kwargs):
-        return True
+        return True, ""
 
     def get_story_history_api(*args, **kwargs):
         return {}, "ImportError: get_story_history_api"
 
     class FileProcessor:
         @staticmethod
-        def load_file_content(file): return "Dummy Content"
+        def load_file_content(file):
+            return "Dummy Content"
 
 
 def render_universe():
@@ -58,16 +59,15 @@ def _render_worldview_tab(proj):
                 try:
                     content = FileProcessor.load_file_content(uploaded_file)
                     if content and not content.startswith("[Error]"):
-                        success = ingest_file_to_backend(content, "worldview")
+                        success, msg = ingest_file_to_backend(content, "worldview")
                         if success:
-                            # ✅ 업로드한 원문을 아래 입력칸에 그대로 누적
                             proj["worldview"] = (proj.get("worldview", "").rstrip() + "\n\n" + content.strip()).strip()
                             st.success("세계관 자료가 성공적으로 추가되었습니다!")
                             st.rerun()
                         else:
-                            st.error("서버 전송 실패")
+                            st.error(msg or "서버 전송 실패")
                     else:
-                        st.error("파일 내용을 읽을 수 없습니다.")
+                        st.error(content if content else "파일 내용을 읽을 수 없습니다.")
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
 

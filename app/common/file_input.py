@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -20,63 +21,114 @@ class FileProcessor:
     """
 
     @staticmethod
-    def load_file_content(file_path: str) -> str:
+    def load_file_content(file_path) -> str:
         """
-        파일 경로를 받아서 텍스트 내용을 추출해 반환합니다.
+        파일 경로(str/Path) 또는 Streamlit UploadedFile을 받아서 텍스트 내용을 추출해 반환합니다.
         """
-        path = Path(file_path)
-        if not path.exists():
-            return f"[Error] 파일을 찾을 수 없습니다: {file_path}"
-
-        ext = path.suffix.lower()
+        tmp_path = None
 
         try:
-            # 1. JSON & TXT
-            if ext == ".json":
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                # JSON은 보기 좋게 문자열로 변환
-                return json.dumps(data, ensure_ascii=False, indent=2)
+            # 1) Streamlit UploadedFile 처리 (name + getvalue/read)
+            if hasattr(file_path, "name") and (hasattr(file_path, "getvalue") or hasattr(file_path, "read")):
+                filename = str(getattr(file_path, "name", "") or "")
+                ext = Path(filename).suffix.lower()
 
-            elif ext == ".txt":
                 try:
+                    data = file_path.getvalue() if hasattr(file_path, "getvalue") else file_path.read()
+                except Exception as e:
+                    return f"[Error] 업로드 파일 읽기 실패: {e}"
+
+                if not isinstance(data, (bytes, bytearray)):
+                    try:
+                        data = bytes(data)
+                    except Exception:
+                        return "[Error] 업로드 파일 데이터 형식이 올바르지 않습니다."
+
+                # txt/json이면 바로 디코딩해서 처리
+                if ext in (".txt", ".json"):
+                    try:
+                        text_content = data.decode("utf-8")
+                    except UnicodeDecodeError:
+                        text_content = data.decode("cp949", errors="ignore")
+
+                    if ext == ".json":
+                        try:
+                            obj = json.loads(text_content)
+                            return json.dumps(obj, ensure_ascii=False, indent=2)
+                        except Exception:
+                            return text_content
+                    return text_content
+
+                # pdf/docx 등은 임시파일로 떨궈서 기존 경로 로직 태움
+                try:
+                    fd, tmp_path = tempfile.mkstemp(suffix=ext or ".bin")
+                    os.close(fd)
+                    with open(tmp_path, "wb") as f:
+                        f.write(data)
+                    file_path = tmp_path
+                except Exception as e:
+                    return f"[Error] 임시파일 생성 실패: {e}"
+
+            # 2) 경로(str/Path) 처리
+            path = Path(file_path)
+            if not path.exists():
+                return f"[Error] 파일을 찾을 수 없습니다: {file_path}"
+
+            ext = path.suffix.lower()
+
+            try:
+                # 1. JSON & TXT
+                if ext == ".json":
                     with open(path, "r", encoding="utf-8") as f:
-                        return f.read()
-                except UnicodeDecodeError:
-                    # 한글 윈도우(cp949) 대응
-                    with open(path, "r", encoding="cp949") as f:
-                        return f.read()
+                        data = json.load(f)
+                    return json.dumps(data, ensure_ascii=False, indent=2)
 
-            # 2. PDF 파일
-            elif ext == ".pdf":
-                if not PdfReader:
-                    return "[Error] pypdf 라이브러리가 설치되지 않았습니다."
+                elif ext == ".txt":
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            return f.read()
+                    except UnicodeDecodeError:
+                        with open(path, "r", encoding="cp949") as f:
+                            return f.read()
 
-                reader = PdfReader(path)
-                full_text = []
-                for page in reader.pages:
-                    text = page.extract_text()
-                    if text:
-                        full_text.append(text)
-                return "\n".join(full_text)
+                # 2. PDF 파일
+                elif ext == ".pdf":
+                    if not PdfReader:
+                        return "[Error] pypdf 라이브러리가 설치되지 않았습니다."
 
-            # 3. Word(DOCX) 파일
-            elif ext in [".docx", ".doc"]:
-                if not Document:
-                    return "[Error] python-docx 라이브러리가 설치되지 않았습니다."
+                    reader = PdfReader(str(path))
+                    full_text = []
+                    for page in reader.pages:
+                        text = page.extract_text()
+                        if text:
+                            full_text.append(text)
+                    return "\n".join(full_text)
 
-                doc = Document(path)
-                return "\n".join([para.text for para in doc.paragraphs])
+                # 3. Word(DOCX) 파일
+                elif ext in [".docx", ".doc"]:
+                    if not Document:
+                        return "[Error] python-docx 라이브러리가 설치되지 않았습니다."
 
-            # 4. HWP (미지원)
-            elif ext == ".hwp":
-                return "[Error] HWP 파일은 직접 지원하지 않습니다. PDF로 변환해서 테스트해주세요."
+                    doc = Document(str(path))
+                    return "\n".join([para.text for para in doc.paragraphs])
 
-            else:
-                return f"[Error] 지원하지 않는 확장자입니다: {ext}"
+                # 4. HWP (미지원)
+                elif ext == ".hwp":
+                    return "[Error] HWP 파일은 직접 지원하지 않습니다. PDF로 변환해서 테스트해주세요."
 
-        except Exception as e:
-            return f"[Error] 파일 읽기 중 예외 발생: {str(e)}"
+                else:
+                    return f"[Error] 지원하지 않는 확장자입니다: {ext}"
+
+            except Exception as e:
+                return f"[Error] 파일 읽기 중 예외 발생: {str(e)}"
+
+        finally:
+            # 임시파일 정리
+            try:
+                if tmp_path and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
 
     @staticmethod
     def parse_extracted_text(text_content: str, mode: str = "character") -> Any:
@@ -85,23 +137,17 @@ class FileProcessor:
         - mode='character': JSON 파싱 시도 -> 실패 시 통짜 텍스트로 설명 처리
         - mode='world': 그냥 텍스트 반환
         """
-        # 1. JSON 파싱 시도 (형식이 갖춰진 파일인 경우)
         try:
             data = json.loads(text_content)
-            # 만약 리스트나 딕셔너리면 그대로 반환
             if isinstance(data, (dict, list)):
                 return data
         except json.JSONDecodeError:
             pass
 
-        # 2. JSON이 아니면 그냥 줄글(Raw Text)로 처리
         if mode == "character":
-            # 캐릭터인데 줄글이다? -> 이름은 '미정'으로 두고 내용을 설명에 넣음
-            # (실제론 나중에 LLM이 내용을 보고 이름을 추출해야 함)
             return [{
                 "name": "자동 감지 필요 (파일 내용)",
                 "description": text_content[:500] + ("..." if len(text_content) > 500 else "")
             }]
-
-        else:  # world 등
+        else:
             return text_content

@@ -5,25 +5,27 @@ from pathlib import Path
 import json
 
 
+# frontend/components/characters.py 의 load_characters_from_file 수정
 def load_characters_from_file():
-    # 🔴 백엔드 DB_PATH와 완벽히 일치하는 절대 경로로 수정했습니다.
-    print("load_characters_from_file() 동작")
+    try:
+        # 1. API를 통해 백엔드에서 직접 데이터를 가져옵니다.
+        from api import get_characters_api
+        data = get_characters_api()
+
+        if data and isinstance(data, dict):
+            with st.status("load_characters_from_flie 결과 :", expanded=True) as status:
+                st.write(data)
+            print(f"✅ API를 통해 {len(data)}명의 캐릭터 로드 성공")
+            return list(data.values())
+    except Exception as e:
+        print(f"⚠️ API 호출 실패, 로컬 파일 시도: {e}")
+
+    # [Fallback] 만약 API가 실패하면 기존처럼 로컬 파일 시도
     file_path = "/app/app/data/characters.json"
-
     if os.path.exists(file_path):
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                # 데이터가 딕셔너리 형태면 리스트로 변환하여 반환
-                if isinstance(data, dict):
-                    return list(data.values())
-
-                print("load_characters_from_file() : ")
-                print(data)
-                return data
-        except Exception as error:
-            print(f"❌ 파일 읽기 에러: {error}")
-            return []
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return list(data.values()) if isinstance(data, dict) else data
     return []
 
 

@@ -183,3 +183,14 @@ def health_check():
     return {"status": "ok", "version": "1.0.0"}
 
 # 실행 명령: uvicorn main:app --reload
+
+# backend/main.py 하단에 추가
+@app.get("/story/characters", tags=["Story Keeper"])
+def get_characters():
+    import json, os
+    # 백엔드 내부의 실제 데이터 경로
+    path = "app/data/characters.json"
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
