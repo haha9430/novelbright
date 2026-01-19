@@ -13,17 +13,22 @@ def load_characters_from_file():
         data = get_characters_api()
 
         if data and isinstance(data, dict):
-            print(f"✅ API를 통해 {len(data)}명의 캐릭터 로드 성공")
+            # 🔴 핵심: { "김태평": {...} } 형태를 [ {...}, {...} ] 리스트로 변환
             return list(data.values())
+        elif isinstance(data, list):
+            return data
     except Exception as e:
         print(f"⚠️ API 호출 실패, 로컬 파일 시도: {e}")
 
-    # [Fallback] 만약 API가 실패하면 기존처럼 로컬 파일 시도
+    # [Fallback] 로컬 파일 시도 시에도 똑같이 변환 적용
     file_path = "/app/app/data/characters.json"
     if os.path.exists(file_path):
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return list(data.values()) if isinstance(data, dict) else data
+            # 🔴 여기서도 딕셔너리면 리스트로 변환해서 반환
+            if isinstance(data, dict):
+                return list(data.values())
+            return data
     return []
 
 
