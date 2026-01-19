@@ -1,25 +1,33 @@
-import streamlit as st
-import uuid
-from components.common import add_character_modal
+import sys
+import os
+from pathlib import Path
 
-# [통합] API 및 파일 처리 모듈 임포트
-# 팀원의 코드 기능(FileProcessor 등)을 수용하되, 경로 에러 방지 처리
+# [해결 핵심] 프로젝트 루트를 파이썬 경로에 추가하여 루트에 있는 api.py를 찾게 만듭니다.
+root_path = str(Path(__file__).resolve().parents[2])
+if root_path not in sys.path:
+    sys.path.append(root_path)
+
 try:
+    # 이제 루트 폴더의 api.py를 정상적으로 불러옵니다.
     from api import save_character_api, ingest_file_to_backend
     from app.common.file_input import FileProcessor
-except ImportError:
-    # 모듈이 없을 경우를 대비한 더미 함수 (앱이 멈추지 않도록 함)
-    def save_character_api(*args, **kwargs):
-        pass
-
-
+except ImportError as e:
+    # 만약의 경우 실행될 더미 함수도 반드시 값 2개를 돌려주도록 수정합니다.
     def ingest_file_to_backend(*args, **kwargs):
-        return True
+        return False, f"API 로드 실패 (경로 오류: {e})"
 
 
+    def save_character_api(*args, **kwargs):
+        return False
+
+
+    # FileProcessor가 없을 경우를 대비한 더미
     class FileProcessor:
         @staticmethod
-        def load_file_content(file): return "Dummy Content"
+        def load_file_content(path): return f"[Error] Module not found: {e}"
+
+
+    print(f"⚠️ [Import Warning] 모듈을 불러오지 못해 더미 함수를 사용합니다: {e}")
 
 
 def render_characters(proj):
