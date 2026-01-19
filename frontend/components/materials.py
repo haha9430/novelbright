@@ -79,7 +79,7 @@ def render_materials():
                 c_head, c_btn = st.columns([8, 1])
                 c_head.caption("자료 상세 내용")
 
-                # 삭제 버튼
+                # 1. 삭제 버튼
                 if c_btn.button("🗑", key=f"del_m_{sel_mat['id']}"):
                     requests.delete(f"{BASE_URL}/history/material/{sel_mat['id']}", json=sel_mat)
                     proj['materials'].remove(sel_mat)
@@ -87,12 +87,8 @@ def render_materials():
                     st.toast("자료가 삭제되었습니다.")
                     st.rerun()
 
-                # 제목 편집
-                new_t = st.text_input("제목", value=sel_mat['title'], key="mat_title")
-                if new_t != sel_mat['title']: sel_mat['title'] = new_t
-
                 # =================================================
-                # [NEW] 파일 업로드 영역 (텍스트 추출)
+                # 2. [위치 이동] 파일 업로드 로직을 먼저 수행해야 함
                 # =================================================
                 with st.expander("파일에서 내용 불러오기 (HWP, PDF, Word)", expanded=False):
                     uploaded_file = st.file_uploader(
@@ -107,12 +103,12 @@ def render_materials():
                                 extracted_text = parse_file_content(uploaded_file)
 
                                 if extracted_text:
-                                    # 1. 데이터 객체 업데이트 (백엔드 저장용)
+                                    # 데이터 업데이트
                                     sel_mat['content'] = extracted_text
                                     sel_mat['title'] = uploaded_file.name
 
-                                    # 2. [핵심] Streamlit 위젯 상태 강제 업데이트 (화면 표시용)
-                                    # 이 부분이 있어야 rerurn 시 text_area와 text_input 값이 바뀝니다.
+                                    # [중요] 여기서 세션 상태를 업데이트합니다.
+                                    # 아직 st.text_input이 그려지지 않았으므로 에러가 나지 않습니다.
                                     st.session_state["mat_content"] = extracted_text
                                     st.session_state["mat_title"] = uploaded_file.name
 
@@ -121,9 +117,15 @@ def render_materials():
                                 else:
                                     st.error("텍스트를 추출하지 못했습니다.")
 
+                # =================================================
+                # 3. [위치 이동] 제목 및 내용 편집 위젯은 로직 '아래'에 있어야 함
+                # =================================================
+
+                # 제목 편집 (이제 위에서 st.session_state["mat_title"]을 바꿔도 반영됨)
+                new_t = st.text_input("제목", value=sel_mat['title'], key="mat_title")
+                if new_t != sel_mat['title']: sel_mat['title'] = new_t
+
                 # 내용 편집 (TextArea)
-                # key="mat_content"가 설정되어 있으므로, 위에서 st.session_state["mat_content"]를
-                # 업데이트해주면 value=... 보다 세션 상태값이 우선 적용되어 화면이 바뀝니다.
                 new_ctx = st.text_area(
                     "내용",
                     value=sel_mat.get('content', ''),
@@ -131,27 +133,17 @@ def render_materials():
                     placeholder="직접 내용을 입력하거나 위에서 파일을 불러오세요.",
                     key="mat_content"
                 )
-
-                # 사용자가 타이핑해서 수정했을 때를 위한 로직
-                if new_ctx != sel_mat.get('content', ''):
-                    sel_mat['content'] = new_ctx
+                if new_ctx != sel_mat.get('content', ''): sel_mat['content'] = new_ctx
 
                 st.divider()
 
-                # 저장 버튼
+                # 4. 저장 버튼
                 if st.button("💾 저장하기", type="primary", use_container_width=True):
                     try:
-                        # 백엔드 API 연결 시 사용 (현재는 세션에만 저장)
                         requests.post(f"{BASE_URL}/history/upsert", json=sel_mat)
                         st.toast("자료가 저장되었습니다!", icon="✅")
                     except Exception as e:
                         st.error(f"저장 중 오류가 발생했습니다: {e}")
-
-        else:
-            if proj['materials']:
-                st.info("왼쪽 목록에서 자료를 선택해주세요.")
-            else:
-                st.info("'추가' 버튼을 눌러 새로운 자료 공간을 만드세요.")
 
 
 # =================================================
