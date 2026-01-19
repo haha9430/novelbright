@@ -10,7 +10,12 @@ from dotenv import load_dotenv
 from langchain_upstage import ChatUpstage
 
 
+# =========================================================
+# 🛠️ 유틸리티 함수 (기존 로직 유지)
+# =========================================================
+
 def _project_root() -> Path:
+    # 경로 깊이에 따라 parents[n] 조절 필요 (현재 깊이 4 기준)
     return Path(__file__).resolve().parents[4]
 
 
@@ -71,15 +76,13 @@ def _pick_summary(text: str) -> List[str]:
     return summary[:8]
 
 
+# =========================================================
+# 🏛️ PlotManager 클래스 (기존 기능 + 안전한 업데이트)
+# =========================================================
+
 class PlotManager:
     """
     plot.json / story_history.json 관리
-
-    ✅ plot.json 저장 포맷 (딱 2개만)
-    {
-      "summary": [...],
-      "genre": ["..."]   # 최소 1개
-    }
     """
 
     def __init__(self):
@@ -95,7 +98,7 @@ class PlotManager:
 
         self.llm = self._init_llm()
 
-        # [수정] K8s PVC 마운트 경로를 직접 지정
+        # [경로 설정] K8s / Local 하이브리드
         k8s_data_dir = Path("/app/app/data")
 
         if k8s_data_dir.exists():
@@ -107,17 +110,14 @@ class PlotManager:
         self.global_setting_file = self.data_dir / "plot.json"
         self.history_file = self.data_dir / "story_history.json"
 
-        # 디버깅을 위해 실제 경로 출력
-        print(f"📂 Active Data Dir: {self.data_dir}")
+        # 디렉토리 생성 보장
+        self.data_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"📂 plot.json: {self.global_setting_file}")
-        print(f"📂 story_history.json: {self.history_file}")
-        print(f"🤖 LLM ready: {self.llm is not None}")
+        print(f"📂 Active Data Dir: {self.data_dir}")
 
     def _fix_ssl_cert_env(self) -> None:
         try:
             import certifi
-
             cafile = certifi.where()
             os.environ["SSL_CERT_FILE"] = cafile
             os.environ["REQUESTS_CA_BUNDLE"] = cafile
@@ -155,9 +155,9 @@ class PlotManager:
         except Exception:
             return {}
 
-    # =========================
-    # (필수) story_history 저장용
-    # =========================
+    # ---------------------------------------------------------
+    # ✅ (기존 기능 1) 에피소드 요약 및 히스토리 저장
+    # ---------------------------------------------------------
     def summarize_and_save(self, episode_no: int, full_text: str) -> Dict[str, Any]:
         if not isinstance(full_text, str) or not full_text.strip():
             return {"status": "error", "message": "empty text"}
@@ -215,10 +215,9 @@ class PlotManager:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    # =========================
-    # (필수) pipeline이 호출하는 extract_facts
-    # - LLM 없어도 파이프라인이 안 죽도록 "빈 구조" 반환
-    # =========================
+    # ---------------------------------------------------------
+    # ✅ (기존 기능 2) 파이프라인용 팩트 추출
+    # ---------------------------------------------------------
     def extract_facts(self, episode_no: int, full_text: str, story_state: Dict[str, Any]) -> Dict[str, Any]:
         if self.llm is None:
             return {
@@ -266,20 +265,17 @@ Input:
                 "state_changes": {},
             }
 
-    # =========================
-    # 세계관 저장
-    # - summary: 원문 문장 기반
-    # - genre: AI가 추측해서 최소 1개
-    # - important_parts 없음
-    # =========================
+    # ---------------------------------------------------------
+    # ✅ (기존 기능 3 + 개선) 세계관 업데이트 (병합 로직 적용)
+    # ---------------------------------------------------------
     def update_global_settings(self, text: str) -> Dict[str, Any]:
         """
-        [수정됨] 기존 plot.json 내용을 보존하면서 summary와 genre만 업데이트
+        [업데이트됨] 기존 plot.json 내용을 보존하면서 summary와 genre만 업데이트
         """
         if not isinstance(text, str) or not text.strip():
             return {"status": "error", "message": "empty text"}
 
-        # 1. 요약 및 장르 추출 (기존 로직 유지)
+        # 1. 요약 및 장르 추출
         summary = _pick_summary(text)
 
         allowed_genres = [
@@ -297,66 +293,53 @@ Input:
 너는 웹소설 편집자다. 아래 글을 읽고 장르를 추측해라.
 [규칙]
 - 출력은 JSON만
-- 키는 "genre" 하나만
-- genre는 리스트
+- 키는 "genre" 하나만 (리스트)
 - 반드시 후보에서만 선택
-- 최소 1개, 최대 3개 (절대 비우지 마)
-- "기타/일반/모름" 금지
-
-[후보]
-{allowed_genres}
+- 최소 1개, 최대 3개
+- 후보: {allowed_genres}
 
 [텍스트]
 {text[:4500]}
 """
-            for _ in range(2):
-                try:
-                    res = self.llm.invoke(prompt)
-                    raw = getattr(res, "content", str(res))
-                    data = self._safe_json(raw) or {}
-                    g = data.get("genre", [])
+            try:
+                res = self.llm.invoke(prompt)
+                raw = getattr(res, "content", str(res))
+                data = self._safe_json(raw) or {}
+                g = data.get("genre", [])
 
-                    # (장르 정제 로직 기존 유지)
-                    if isinstance(g, str) and g.strip():
-                        g_list = [g.strip()]
-                    elif isinstance(g, list):
-                        g_list = [str(x).strip() for x in g if str(x).strip()]
-                    else:
-                        g_list = []
+                if isinstance(g, str) and g.strip():
+                    g_list = [g.strip()]
+                elif isinstance(g, list):
+                    g_list = [str(x).strip() for x in g if str(x).strip()]
+                else:
+                    g_list = []
 
-                    allowed = set(allowed_genres)
-                    banned = {"기타", "일반", "모름", "unknown", "etc"}
-                    cleaned: List[str] = []
-                    for x in g_list:
-                        if x in banned: continue
-                        if x not in allowed: continue
-                        if x not in cleaned: cleaned.append(x)
+                # 필터링
+                allowed = set(allowed_genres)
+                cleaned = []
+                for x in g_list:
+                    if x in allowed and x not in cleaned:
+                        cleaned.append(x)
 
-                    genre = cleaned[:3]
-                    if genre: break
-                except Exception:
-                    genre = []
-
-        if not genre:
+                genre = cleaned[:3]
+                if not genre: genre = ["드라마"]
+            except Exception:
+                genre = ["드라마"]
+        else:
             genre = ["드라마"]
 
         # =========================================================
-        # ✅ [핵심 수정 구간] 기존 데이터 읽기 -> 병합 -> 저장
+        # [데이터 안전 병합 로직]
         # =========================================================
-
-        # 1. 기존 파일이 있으면 읽어옵니다. (없으면 빈 딕셔너리)
         current_data = _read_json(self.global_setting_file, default={})
 
-        # 2. 기존 데이터에 새로운 summary와 genre를 덮어씌웁니다.
-        # 이렇게 해야 기존에 있던 'main_characters' 같은 다른 키들이 지워지지 않습니다.
         current_data["summary"] = summary
         current_data["genre"] = genre
 
-        # (선택사항) 분석에 사용된 원본 텍스트도 저장해두면 나중에 유용할 수 있습니다.
-        # current_data["last_analysis_text"] = text[:500] + "..."
+        # (선택) 원본 텍스트 미리보기 저장
+        # current_data["last_analysis_preview"] = text[:200]
 
         try:
-            # 3. 병합된 전체 데이터를 저장합니다.
             _write_json(self.global_setting_file, current_data)
             print(f"🌍 [세계관 설정] 업데이트 완료: {self.global_setting_file}")
             return {"status": "success", "data": current_data}
@@ -366,8 +349,27 @@ Input:
 
 
 class StoryHistoryManager:
+    """
+    기존 코드와의 호환성을 위해 유지
+    """
+
     def __init__(self):
         self.pm = PlotManager()
 
     def summarize_and_save_episode(self, *, episode_no: int, full_text: str) -> Dict[str, Any]:
         return self.pm.summarize_and_save(int(episode_no), full_text)
+
+
+# =========================================================
+# 📢 [신규] ingest_service 연결용 함수 (맨 아래 추가)
+# =========================================================
+def update_world_setting(text: str) -> Dict[str, Any]:
+    """
+    PlotManager를 생성하고 설정을 업데이트하는 래퍼 함수.
+    ingest_service.py에서 이 함수를 import해서 사용합니다.
+    """
+    try:
+        manager = PlotManager()
+        return manager.update_global_settings(text)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

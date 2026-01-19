@@ -1,4 +1,3 @@
-# app/service/characters/__init__.py
 from __future__ import annotations
 
 import json
@@ -9,6 +8,7 @@ from typing import Any, Dict, List, Tuple
 DB_PATH = "app/data/characters.json"
 
 from app.service.characters.solar_client import SolarClient
+
 
 # -------------------------
 # 파일 IO
@@ -291,8 +291,9 @@ def _extract_age_gender(text: str) -> str:
         return f"{age} / {gender}"
     return age or gender
 
+
 def _extract_from_text(text: str) -> Dict[str, Any]:
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("🚀 [1단계] _extract_from_text 시작")
     print(f"   👉 입력된 텍스트(앞 50자): {text[:50]}...")
 
@@ -321,71 +322,12 @@ def _extract_from_text(text: str) -> Dict[str, Any]:
     except Exception as e:
         print(f"   🔥 [Solar 호출 에러] {e}")
         import traceback
-        traceback.print_exc() # 에러의 상세 내용을 다 보여줍니다
+        traceback.print_exc()  # 에러의 상세 내용을 다 보여줍니다
         return {}
     finally:
         print("🚀 [1단계] 종료")
-        print("="*50 + "\n")
+        print("=" * 50 + "\n")
 
-'''
-def _extract_from_text(desc: str) -> Dict[str, Any]:
-    desc = _remove_footnotes(desc or "")
-    desc = _norm(desc)
-
-    sections = _collect_sections(desc)
-
-    age_gender = _clean_value(sections.get("age_gender", ""))
-    job_status = _clean_value(sections.get("job_status", ""))
-
-    core_traits_items = _split_bullets(sections.get("core_traits", ""))
-    core_traits: Any = core_traits_items if core_traits_items else "none"
-
-    personality = _parse_personality(sections.get("personality", ""))
-
-    outer_goal = _clean_value(sections.get("outer_goal", ""))
-    inner_goal = _clean_value(sections.get("inner_goal", ""))
-
-    trauma_weakness = _clean_value(sections.get("trauma_weakness", ""))
-    speech_habit = _clean_value(sections.get("speech_habit", ""))
-
-    rel_items = _split_bullets(sections.get("relationships", ""))
-    relationships: Any = rel_items if rel_items else "none"
-
-    result = {
-        "age_gender": age_gender,
-        "job_status": job_status,
-        "core_traits": core_traits,
-        "personality": personality,
-        "outer_goal": outer_goal,
-        "inner_goal": inner_goal,
-        "trauma_weakness": trauma_weakness,
-        "speech_habit": speech_habit,
-        "relationships": relationships,
-    }
-
-    # 양식이 거의 없으면 서술형으로 채움
-    empty_cnt = 0
-    for k in ["age_gender", "job_status", "core_traits", "outer_goal", "inner_goal", "trauma_weakness", "speech_habit", "relationships"]:
-        if result.get(k) in ("none", "", None):
-            empty_cnt += 1
-
-    if empty_cnt >= 6:
-        result.update(
-            {
-                "age_gender": _extract_age_gender(desc),
-                "job_status": _extract_job_status(desc),
-                "core_traits": _extract_core_traits(desc),
-                "outer_goal": _extract_goals(desc)[0],
-                "inner_goal": _extract_goals(desc)[1],
-                "trauma_weakness": _extract_trauma_weakness(desc),
-                "speech_habit": _extract_speech_habit(desc),
-                "relationships": _extract_relationships(desc),
-                "personality": result.get("personality") or {"pros": "none", "cons": "none"},
-            }
-        )
-
-    return result
-'''
 
 # -------------------------
 # MERGE(보완/수정) 로직
@@ -507,8 +449,10 @@ def _merge_character(old: Dict[str, Any], new: Dict[str, Any]) -> Dict[str, Any]
     merged["age_gender"] = _merge_age_gender(old.get("age_gender", "none"), new.get("age_gender", "none"))
     merged["job_status"] = _merge_comma_tags(old.get("job_status", "none"), new.get("job_status", "none"))
 
-    merged["core_traits"] = _merge_list_field(old.get("core_traits", "none"), new.get("core_traits", "none"), max_items=10)
-    merged["relationships"] = _merge_list_field(old.get("relationships", "none"), new.get("relationships", "none"), max_items=20)
+    merged["core_traits"] = _merge_list_field(old.get("core_traits", "none"), new.get("core_traits", "none"),
+                                              max_items=10)
+    merged["relationships"] = _merge_list_field(old.get("relationships", "none"), new.get("relationships", "none"),
+                                                max_items=20)
 
     merged["personality"] = _merge_personality(old.get("personality", {}), new.get("personality", {}))
 
@@ -552,7 +496,8 @@ def parse_character_with_name(name: str, features: str) -> Dict[str, Any]:
         "job_status": extracted.get("job_status") or "none",
         # core_traits가 리스트가 아니면 빈 리스트로 강제 변환
         "core_traits": extracted.get("core_traits") if isinstance(extracted.get("core_traits"), list) else [],
-        "personality": extracted.get("personality") if isinstance(extracted.get("personality"), dict) else {"pros": "none", "cons": "none"},
+        "personality": extracted.get("personality") if isinstance(extracted.get("personality"), dict) else {
+            "pros": "none", "cons": "none"},
         "outer_goal": extracted.get("outer_goal") or "none",
         "inner_goal": extracted.get("inner_goal") or "none",
         "trauma_weakness": extracted.get("trauma_weakness") or "none",
@@ -560,14 +505,11 @@ def parse_character_with_name(name: str, features: str) -> Dict[str, Any]:
         # relationships가 리스트가 아니면 빈 리스트로 강제 변환
         "relationships": extracted.get("relationships") if isinstance(extracted.get("relationships"), list) else [],
         # ✅ additional_settings 누락 방지 (빈 딕셔너리라도 넣어줌)
-        "additional_settings": extracted.get("additional_settings") if isinstance(extracted.get("additional_settings"), dict) else {}
+        "additional_settings": extracted.get("additional_settings") if isinstance(extracted.get("additional_settings"),
+                                                                                  dict) else {}
     }
 
     return final_data
-
-def _clean_name(name: str) -> str:
-    if not name: return ""
-    return name.strip()
 
 
 def upsert_character(name: str, features: str, *, db_path: str = DB_PATH) -> Dict[str, Any]:
@@ -602,4 +544,55 @@ def upsert_character(name: str, features: str, *, db_path: str = DB_PATH) -> Dic
     }
 
 
-__all__ = ["upsert_character", "parse_character_with_name", "DB_PATH"]
+# =========================================================
+# 📢 [신규] ingest_service 연결용 함수 (맨 아래 추가)
+# =========================================================
+def summarize_character_info(text: str) -> Dict[str, Any]:
+    """
+    파일 업로드로 받은 텍스트(text)를 분석하여,
+    캐릭터 이름을 자동으로 감지하고 DB에 저장/병합합니다.
+    """
+    print("🚀 [Character Module] 분석 요청 수신...")
+
+    # 1. SolarClient를 사용해 텍스트 전체 분석 (기존 _extract_from_text 활용)
+    extracted = _extract_from_text(text)
+
+    # 2. AI가 추출한 결과에서 '이름(name)' 확인
+    detected_name = extracted.get("name")
+
+    if not detected_name or detected_name == "none":
+        print("   ⚠️ 이름을 감지하지 못했습니다. 저장을 중단합니다.")
+        return {"status": "error", "message": "캐릭터 이름을 찾을 수 없습니다."}
+
+    print(f"   ✅ 감지된 이름: {detected_name}")
+
+    # 3. DB 저장 로직 수행 (기존 로직 재사용)
+    db = _read_json_safe(DB_PATH)
+    key = _clean_name(detected_name)
+
+    # 이름 필드 확실히 보장
+    extracted["name"] = key
+
+    # 빈 리스트/딕셔너리 표준화
+    if not isinstance(extracted.get("core_traits"), list): extracted["core_traits"] = []
+    if not isinstance(extracted.get("relationships"), list): extracted["relationships"] = []
+    if not isinstance(extracted.get("personality"), dict): extracted["personality"] = {"pros": "none", "cons": "none"}
+
+    if key in db:
+        merged = _merge_character(db[key], extracted)
+        db[key] = merged
+        action = "merged"
+    else:
+        db[key] = extracted
+        action = "inserted"
+
+    _write_json(DB_PATH, db)
+
+    return {
+        "status": "success",
+        "action": action,
+        "name": key
+    }
+
+
+__all__ = ["upsert_character", "parse_character_with_name", "summarize_character_info", "DB_PATH"]
