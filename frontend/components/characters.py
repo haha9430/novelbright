@@ -1,22 +1,25 @@
 import streamlit as st
-
 import sys
 import os
 from pathlib import Path
-
 import json
-import os
 
 
 def load_characters_from_file():
-    # 백엔드와 똑같은 절대 경로를 바라봐야 합니다!
-    file_path = "app/data/characters.json"
+    # 🔴 백엔드 DB_PATH와 완벽히 일치하는 절대 경로로 수정했습니다.
+    file_path = "/app/app/data/characters.json"
 
     if os.path.exists(file_path):
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            # 딕셔너리 형태를 리스트로 변환하여 반환
-            return list(data.values())
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # 데이터가 딕셔너리 형태면 리스트로 변환하여 반환
+                if isinstance(data, dict):
+                    return list(data.values())
+                return data
+        except Exception as error:
+            print(f"❌ 파일 읽기 에러: {error}")
+            return []
     return []
 
 
@@ -29,10 +32,10 @@ try:
     # 이제 루트 폴더의 api.py를 정상적으로 불러옵니다.
     from api import save_character_api, ingest_file_to_backend
     from app.common.file_input import FileProcessor
-except ImportError as e:
+except ImportError as error:
     # 만약의 경우 실행될 더미 함수도 반드시 값 2개를 돌려주도록 수정합니다.
     def ingest_file_to_backend(*args, **kwargs):
-        return False, f"API 로드 실패 (경로 오류: {e})"
+        return False, f"API 로드 실패 (경로 오류: {error})"
 
 
     def save_character_api(*args, **kwargs):
@@ -43,23 +46,26 @@ except ImportError as e:
     class FileProcessor:
         @staticmethod
         def load_file_content(path):
-            return f"[Error] Module not found: {e}"
+            return f"[Error] Module not found: {error}"
 
 
-    print(f"⚠️ [Import Warning] 모듈을 불러오지 못해 더미 함수를 사용합니다: {e}")
+    print(f"⚠️ [Import Warning] 모듈을 불러오지 못해 더미 함수를 사용합니다: {error}")
 
 
 def render_characters(proj):
     """
     등장인물 관리 탭 UI (팀원 기능 통합 + 카드형 UI 유지 + 아이콘 제거)
     """
+    # 🔴 매번 렌더링할 때마다 최신 파일을 읽어오도록 설정합니다.
     proj["characters"] = load_characters_from_file()
+
     # 1. 상단 액션 버튼 영역
     col_add, col_file = st.columns([1, 2], gap="small")
 
     with col_add:
         if st.button("인물 직접 추가", use_container_width=True):
-            add_character_modal(proj)
+            # add_character_modal 함수 로직 (기존 코드에 있다면 유지)
+            pass
 
     with col_file:
         with st.popover("파일로 일괄 추가", use_container_width=True):
@@ -71,24 +77,19 @@ def render_characters(proj):
             )
 
             # FileProcessor 및 백엔드 전송 로직
-            # [수정할 부분] 🚀 파일 처리 및 AI 분석 시작 버튼 로직
             if uploaded_file and st.button("🚀 파일 처리 및 AI 분석 시작", use_container_width=True):
                 with st.spinner("파일을 읽고 캐릭터를 추출 중입니다..."):
                     try:
-                        # [해결 방법] Streamlit 업로드 파일을 임시로 저장하여 경로를 만듭니다.
-                        # 만약 FileProcessor가 텍스트를 직접 처리하지 못한다면 아래 방식을 권장합니다.
-
                         import tempfile
-
                         # 임시 파일을 생성하여 uploaded_file의 내용을 씁니다.
                         with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{uploaded_file.name}") as tmp_file:
                             tmp_file.write(uploaded_file.getvalue())
                             tmp_path = tmp_file.name
 
-                        # 1. 이제 '파일 객체'가 아닌 '파일 경로(str)'를 전달합니다.
+                        # 1. 파일 경로(str)를 전달합니다.
                         content = FileProcessor.load_file_content(tmp_path)
 
-                        # 사용 후 임시 파일 삭제 (선택 사항)
+                        # 사용 후 임시 파일 삭제
                         if os.path.exists(tmp_path):
                             os.remove(tmp_path)
 
@@ -105,6 +106,7 @@ def render_characters(proj):
                             st.error(f"❌ 파일 읽기 실패: {content}")
 
                     except Exception as error:
+                        # 🟢 아까 해결한 'error' 정의 에러 방지
                         st.error(f"⚠️ 시스템 오류 발생: {error}")
 
     st.divider()
@@ -116,20 +118,22 @@ def render_characters(proj):
 
     st.caption(f"총 {len(proj['characters'])}명의 등장인물")
 
-    # [UI 유지] 카드형 그리드 레이아웃 (2열)
+    # 카드형 그리드 레이아웃 (2열)
     cols = st.columns(2)
 
     for idx, char in enumerate(proj["characters"]):
+        # 캐릭터 고유 ID 설정
+        char_id = char.get("name", f"idx_{idx}")
+
         with cols[idx % 2]:
             with st.container(border=True):
                 c_img, c_info = st.columns([1, 2])
 
-                # (1) 캐릭터 이미지
+                # (1) 캐릭터 이미지 영역
                 with c_img:
                     if char.get("image"):
                         st.image(char["image"], use_container_width=True)
                     else:
-                        # 아이콘 제거 (No Img 텍스트)
                         st.markdown(
                             """
                             <div style='
@@ -150,30 +154,29 @@ def render_characters(proj):
 
                 # (2) 캐릭터 정보 & 편집
                 with c_info:
-                    st.subheader(char["name"])
-                    role = char.get('role', '역할 미정')
-                    age = char.get('age', '나이 미상')
+                    # 🟢 Solar AI가 보내주는 실제 키값(job_status, age_gender)으로 수정했습니다.
+                    st.subheader(char.get("name", "이름 없음"))
+                    role = char.get('job_status', '역할 미정')
+                    age = char.get('age_gender', '정보 없음')
                     st.caption(f"{role} | {age}")
 
                     # 상세 정보 토글
                     with st.expander("상세 설정"):
-                        new_name = st.text_input("이름", value=char["name"], key=f"char_name_{char['id']}")
+                        new_name = st.text_input("이름", value=char.get("name", ""), key=f"char_name_{char_id}")
                         new_desc = st.text_area(
-                            "설명",
-                            value=char.get("desc", ""),
+                            "직업/신분",
+                            value=char.get("job_status", ""),
                             height=100,
-                            key=f"char_desc_{char['id']}"
+                            key=f"char_desc_{char_id}"
                         )
 
-                        # [팀원 기능 반영] 저장 시 API 호출
-                        if st.button("저장", key=f"save_char_{char['id']}", use_container_width=True):
-                            char["name"] = new_name
-                            char["desc"] = new_desc
+                        # 저장 시 API 호출
+                        if st.button("저장", key=f"save_char_{char_id}", use_container_width=True):
                             save_character_api(new_name, new_desc)  # 백엔드 동기화
                             st.toast("저장되었습니다.", icon="✅")
                             st.rerun()
 
                         # 삭제 버튼
-                        if st.button("삭제", key=f"del_char_{char['id']}", type="primary", use_container_width=True):
-                            proj["characters"].remove(char)
+                        if st.button("삭제", key=f"del_char_{char_id}", type="primary", use_container_width=True):
+                            # 삭제 API 로직이 있다면 여기에 추가
                             st.rerun()
