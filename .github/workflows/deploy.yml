@@ -4,6 +4,11 @@ on:
   push:
     branches: [ main ]
 
+# [추가] 동시성 제어 (이전 대화에서 권장드린 설정)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -15,6 +20,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1 # [최적화] 최신 커밋만 가져오기
+
+      # 👇 [필수 추가] 이 단계가 없으면 캐시 export 에러가 납니다!
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -23,7 +34,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # [수정] GHCR은 대문자를 허용하지 않으므로 소문자로 변환하여 환경변수에 저장
       - name: Set lower case owner name
         run: |
           echo "OWNER_LC=${OWNER,,}" >> ${GITHUB_ENV}
@@ -38,28 +48,33 @@ jobs:
           TAG="${VERSION}-${SHA}"
           echo "IMAGE_TAG=$TAG" >> $GITHUB_ENV
 
-      - name: Build and push Docker image
+      # [Backend 빌드]
+      - name: Build and push Docker image (Backend)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: true
-          # [수정] 이미지 이름을 moneta-backend로 통일하고 소문자 owner 사용
           tags: |
             ghcr.io/${{ env.OWNER_LC }}/moneta-backend:${{ env.IMAGE_TAG }}
             ghcr.io/${{ env.OWNER_LC }}/moneta-backend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # [수정] 캐시 설정 + scope 추가 (backend용)
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
 
+      # [Frontend 빌드]
       - name: Build and push Frontend image
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.frontend # 프론트엔드 전용 Dockerfile 지정
+          file: ./Dockerfile.frontend
           push: true
           tags: |
             ghcr.io/${{ env.OWNER_LC }}/moneta-frontend:${{ env.IMAGE_TAG }}
             ghcr.io/${{ env.OWNER_LC }}/moneta-frontend:latest
+          # [추가] 프론트엔드도 캐시 적용 + scope 분리 (frontend용)
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -70,13 +85,11 @@ jobs:
           script: |
             cd /home/ubuntu/workspace/deploy/novelbright
             
-            # 최신 매니페스트 파일 가져오기
             git reset --hard
             git pull origin main
             
             cd infra/k8s/application
             
-            # [수정] 배포할 이미지 주소 설정s
             BACKEND_IMAGE="ghcr.io/${{ env.OWNER_LC }}/moneta-backend:${{ env.IMAGE_TAG }}"
             FRONTEND_IMAGE="ghcr.io/${{ env.OWNER_LC }}/moneta-frontend:${{ env.IMAGE_TAG }}"
             
@@ -88,6 +101,5 @@ jobs:
             
             kubectl apply -f .
             
-            # 롤아웃 상태 확인 (성공할 때까지 대기)
             kubectl rollout status deployment/backend -n moneta
             kubectl rollout status deployment/frontend -n moneta
