@@ -1,4 +1,6 @@
 # frontend/api.py
+import zlib
+
 import requests
 import streamlit as st
 import io
@@ -7,6 +9,16 @@ import re
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+
+# ---------------------------------------------------------
+# [추가] 문서 파싱 라이브러리 Import
+# ---------------------------------------------------------
+try:
+    import fitz  # PyMuPDF (PDF)
+    from docx import Document  # python-docx (Word)
+    import olefile  # olefile (HWP)
+except ImportError as e:
+    st.error(f"필수 라이브러리가 설치되지 않았습니다: {e}")
 
 BASE_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
@@ -240,7 +252,27 @@ def save_world_setting_api(content: str) -> bool:
     except Exception as e:
         st.error(f"API 통신 오류: {e}")
         return False
+# =========================
+# [추가] 세계관 저장 헬퍼 (Plot/World 공용)
+# =========================
+def _save_world_and_plot_json(draft: str) -> tuple[bool, str]:
+    """
+    세계관 텍스트를 저장하고 성공 여부와 메시지를 반환합니다.
+    (기존 plot.py에 있던 로직을 API 전용으로 변경)
+    """
+    draft = (draft or "").strip()
+    if not draft:
+        return False, "내용이 비어있습니다."
 
+    try:
+        # 이미 api.py에 있는 save_world_setting_api 함수를 재사용
+        ok = save_world_setting_api(draft)
+        if ok:
+            return True, "저장 성공"
+        else:
+            return False, "API 저장 실패"
+    except Exception as e:
+        return False, f"오류 발생: {str(e)}"
 
 # =========================
 # 6) 자료(materials)
@@ -302,3 +334,157 @@ def analyze_clio_api(current_doc, content_source):
             st.error(f"오류: {res.text}")
     except Exception as e:
         st.error(f"연결 실패: {e}")
+
+
+# =========================
+# [추가] 파일 파싱 (텍스트 추출)
+# =========================
+# =========================================================
+# [수정됨] 파일 파싱 (PDF, DOCX, HWP, TXT, JSON 지원)
+# =========================================================
+def parse_file_content(uploaded_file) -> str:
+    """
+    업로드된 파일 객체를 받아 텍스트 내용으로 반환
+    지원 형식: .txt, .md, .json, .pdf, .docx, .hwp
+    """
+    if uploaded_file is None:
+        return ""
+
+    filename = uploaded_file.name.lower()
+
+    try:
+        # 1. JSON 처리
+        if filename.endswith(".json"):
+            data = json.load(uploaded_file)
+            return json.dumps(data, ensure_ascii=False, indent=2)
+
+        # 2. PDF 처리 (PyMuPDF)
+        elif filename.endswith(".pdf"):
+            file_bytes = uploaded_file.read()  # 바이트로 읽기
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            text = []
+            for page in doc:
+                text.append(page.get_text())
+            return "\n".join(text)
+
+        # 3. Word 처리 (python-docx)
+        elif filename.endswith(".docx"):
+            doc = Document(uploaded_file)
+            text = []
+            for para in doc.paragraphs:
+                text.append(para.text)
+            return "\n".join(text)
+
+        # 4. HWP 처리 (olefile + zlib)
+        elif filename.endswith(".hwp"):
+            return _parse_hwp_file(uploaded_file)
+
+        # 5. 텍스트 기반 (txt, md)
+        else:
+            return uploaded_file.getvalue().decode("utf-8")
+
+    except Exception as e:
+        st.error(f"파일 파싱 중 오류 발생 ({filename}): {e}")
+        return ""
+
+
+def _parse_hwp_file(uploaded_file) -> str:
+    """
+    HWP 5.0 포맷 텍스트 추출 헬퍼 함수
+    """
+    try:
+        # olefile은 파일 객체를 직접 지원함
+        f = olefile.OleFileIO(uploaded_file)
+        dirs = f.listdir()
+
+        # BodyText/SectionX 스트림 찾기
+        body_sections = []
+        for d in dirs:
+            if d[0] == "BodyText":
+                body_sections.append(d)
+
+        # 섹션 순서대로 정렬 (Section0, Section1...)
+        body_sections.sort(key=lambda x: x[1])
+
+        text = ""
+        for section in body_sections:
+            stream = f.openstream(section)
+            data = stream.read()
+
+            # zlib 압축 해제
+            unpacked_data = zlib.decompress(data, -15)
+
+            # UTF-16LE 디코딩
+            decoded_text = unpacked_data.decode('utf-16le', errors='ignore')
+
+            # 텍스트 정제 (일반적인 문자만 남기기 - 약식)
+            clean_text = ""
+            for char in decoded_text:
+                if char == "\n" or (32 <= ord(char) <= 0xD7A3):  # 한글/영어/특문 범위 등
+                    clean_text += char
+
+            text += clean_text + "\n"
+
+        return text
+    except Exception as e:
+        return f"[HWP 파싱 오류] {str(e)}"
+
+
+
+# =========================
+# [추가] 캐릭터 일괄 저장
+# =========================
+
+def save_character_api(name: str, description: str) -> bool:
+    # (기존 코드 유지)
+    if not name or not description: return False
+    url = f"{BASE_URL}/story/character_setting"
+    try:
+        response = requests.post(url, data={"name": name, "text": description})
+        return response.status_code == 200
+    except: return False
+
+
+def save_characters_bulk_api(chars_list: List[Dict[str, Any]]) -> bool:
+    """
+    리스트 형태의 캐릭터 데이터를 받아 순차적으로 저장
+    """
+    if not isinstance(chars_list, list):
+        return False
+
+    success_count = 0
+    for item in chars_list:
+        if not isinstance(item, dict): continue
+
+        name = item.get("name")
+        # desc 키가 없으면 description 키를 찾아봄
+        desc = item.get("desc") or item.get("description") or ""
+
+        if name:
+            if save_character_api(name, desc):
+                success_count += 1
+
+    return success_count > 0
+
+
+# =========================
+# [추가] 캐릭터 DB 삭제 (로컬 JSON 처리)
+# =========================
+def _delete_character_from_db(name: str) -> bool:
+    """
+    characters.json 파일에서 해당 이름의 키를 삭제합니다.
+    (기존 components/characters.py에 있던 로직을 API 계층으로 이동)
+    """
+    try:
+        path = _data_path("characters.json")
+        # 기존 데이터 읽기
+        data = _safe_read_json(path, {})
+
+        if name in data:
+            del data[name]
+            _safe_write_json(path, data)
+            return True
+        return False
+    except Exception as e:
+        print(f"삭제 중 오류 발생: {e}")
+        return False

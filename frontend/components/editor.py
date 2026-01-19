@@ -7,7 +7,7 @@ import textwrap
 # 컴포넌트 및 API 불러오기
 from components.common import get_current_project, get_current_document
 from components.sidebar import render_sidebar
-from frontend.api import analyze_clio_api, analyze_text_api, save_document_api, save_story_history_api
+from api import analyze_clio_api, analyze_text_api, save_document_api, save_story_history_api
 
 def _strip_html_to_text(html: str) -> str:
     if not isinstance(html, str):
@@ -32,7 +32,6 @@ def _sev_style(sev: str):
     return {"border": "#FFA500", "bg": "#FFFAEB", "icon": "⚠️"}
 
 def render_editor():
-    # ... (1~4. 헤더 영역까지 기존 코드와 동일) ...
     proj = get_current_project()
     if not proj:
         st.session_state.page = "home"
@@ -116,13 +115,21 @@ def render_editor():
             # ✅ (현재 분석 대상: n화) 문구 제거
             # st.caption(f"AI 분석 도구를 선택하세요. (현재 분석 대상: {ep_num}화)")
 
-            severity_option = st.selectbox(
-                "분석 민감도(Severity)",
-                options=["high", "medium", "low"],
-                index=0,
-                key="moneta_severity_select",
-                help="선택한 등급으로 분류된 항목만 보여줍니다.",
+            # 1. 화면 표시용 라벨과 실제 값 매핑
+            sev_map = {
+                "Low (관대함)": "low",
+                "Medium (보통)": "medium",
+                "High (엄격함)": "high"
+            }
+            # 2. 슬라이더 생성
+            selected_label = st.select_slider(
+                "분석 민감도: (높을수록 엄격함)",
+                options=list(sev_map.keys()),  # 키만 슬라이더에 표시
+                value="Medium (보통)",  # ✅ 기본값: Medium
+                key="moneta_severity_select_ui",
             )
+            # 3. 실제 로직에 쓸 값 변환 (API 호출용)
+            severity_option = sev_map[selected_label]
 
             col_sk, col_clio = st.columns([1, 1], gap="small")
 

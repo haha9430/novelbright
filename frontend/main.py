@@ -1,6 +1,7 @@
 import sys
 import os
 
+from components.universe import render_universe
 # 현재 파일(main.py)이 있는 폴더를 파이썬 경로에 추가
 current_dir = os.path.dirname(os.path.abspath(__file__))  # .../PythonProject/frontend
 project_root = os.path.dirname(current_dir)               # .../PythonProject
@@ -188,45 +189,54 @@ dark_theme = """
 """
 
 selected_css = dark_theme if st.session_state.dark_mode else light_theme
-st.markdown("""
+st.markdown(
+    f"""
     <style>
-        /* 1. 헤더 전체를 숨기지 말고 배경만 투명하게 변경 (버튼이 살 공간 확보) */
-        header[data-testid="stHeader"] {
+        /* 1. 공통 CSS 및 선택된 테마(다크/라이트) 적용 */
+        {common_css}
+        {selected_css}
+
+        /* 2. 헤더 투명화 등 추가 스타일 */
+        header[data-testid="stHeader"] {{
             background-color: transparent !important;
-            z-index: 1; /* 다른 요소보다 위에 오게 설정 */
-        }
+            z-index: 1;
+        }}
 
-        /* 2. (선택사항) 햄버거 메뉴(점 3개)는 숨기고 싶다면 아래 코드 사용 */
-        /* .stAppDeployButton, [data-testid="stMainMenu"] {
-            display: none;
-        } 
-        */
+        /* 3. 사이드바 열기 버튼 강제 표시 */
+        section[data-testid="stSidebar"] > div > div:nth-child(2) {{
+            /* Streamlit 버전에 따라 다를 수 있음 */
+        }}
 
-        /* 3. ★ 핵심: 사이드바 열기 버튼(화살표)을 강제로 보이게 하고 색상 지정 */
-        section[data-testid="stSidebar"] > div > div:nth-child(2) {
-            /* 이 부분은 Streamlit 버전에 따라 다를 수 있어 아래 클래스 선택자도 같이 씁니다 */
-        }
-
-        [data-testid="stSidebarCollapsedControl"] {
+        [data-testid="stSidebarCollapsedControl"] {{
             display: block !important;
-            color: #ffffff !important; /* 다크모드면 흰색, 라이트모드면 검은색(#000000) */
-            background-color: rgba(100, 100, 100, 0.5); /* 잘 보이게 반투명 배경 추가 */
+            color: #ffffff !important;
+            background-color: rgba(100, 100, 100, 0.5);
             border-radius: 5px;
             padding: 2px;
-        }
+        }}
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
 # =========================================================
 # 3. Main Routing
 # =========================================================
 if st.session_state.page == "home":
     render_home()
+
 elif st.session_state.page == "editor":
     render_editor()
+
+elif st.session_state.page == "universe":
+    # [수정] characters, plot 대신 universe로 통합
+    # render_universe 내부에서 render_sidebar를 부릅니다.
+    render_universe()
+
+elif st.session_state.page == "materials":
+    render_materials()
+
 elif st.session_state.page == "characters":
     render_characters()
 elif st.session_state.page == "plot":
     render_plot()
-elif st.session_state.page == "materials":
-    render_materials()

@@ -15,12 +15,13 @@ def render_moneta_panel(current_doc, content_source):
                 st.markdown("##### 🛡️ 스토리키퍼 설정")
 
             with c_sev:
-                selected_severity = st.selectbox(
-                    "검사 강도",
-                    options=["low", "medium", "high"],
-                    index=1,
-                    key=f"sev_select_{current_doc['id']}",
-                    help="high로 갈수록 AI가 더 꼼꼼하고 엄격하게 설정 충돌을 잡아냅니다.",
+                # 슬라이더는 보통 '낮음 -> 높음(왼쪽 -> 오른쪽)' 순서가 직관적이므로 순서를 조정했습니다.
+                severity_option = st.select_slider(
+                    "분석 민감도 (Severity)",
+                    options=["low", "medium", "high"],  # 슬라이더 단계
+                    value="medium",  # ✅ 기본값을 medium으로 변경
+                    key="moneta_severity_select",
+                    help="오른쪽(High)으로 갈수록 AI가 더 엄격하게 검사합니다.",
                 )
 
             st.divider()

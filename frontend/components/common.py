@@ -2,8 +2,7 @@ import streamlit as st
 import uuid
 import re
 
-from frontend.api import save_character_api
-
+from api import save_character_api
 
 # =========================================================
 # 1. Helper Functions

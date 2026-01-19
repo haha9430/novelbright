@@ -9,18 +9,14 @@ dependencies = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.30.0",
     "python-multipart>=0.0.9",      # 파일 업로드 및 폼 데이터 처리에 필요
-
     # --- Database (RDBMS: PostgreSQL & ORM) ---
     "sqlalchemy>=2.0.30",           # ORM 핵심
     "psycopg2-binary>=2.9.9",       # PostgreSQL 드라이버
     "pgvector>=0.3.0",              # PostgreSQL 벡터 확장 기능
-
     # --- Vector Database ---
     "chromadb>=0.5.0",              # 로컬 벡터 DB 코어
-
     # --- Graph Database (Optional/Future) ---
     "neo4j>=5.20.0",                # Neo4j 드라이버
-
     # --- LLM & LangChain Ecosystem ---
     "langchain>=0.2.0",             # LangChain 프레임워크
     "langchain-core>=0.2.0",
@@ -29,21 +25,21 @@ dependencies = [
     "langchain-chroma>=0.1.0",      # LangChain용 Chroma 통합
     "langchain-community>=0.2.0",   # [필수] GoogleSerperAPIWrapper 포함됨
     "openai>=1.52.2",               # OpenAI 클라이언트
-
     # --- Search Tools ---
     "google-search-results>=2.4.0", # [추가] 검색 관련 유틸리티 라이브러리
-
     # --- Utilities ---
     "python-dotenv>=1.0.0",         # .env 파일 로드
     "pydantic>=2.7.0",              # 데이터 검증
     "pydantic-settings>=2.2.0",     # 환경설정 관리
     "tiktoken>=0.7.0",              # 토큰 계산용
-
     # --- Streamlit & Frontend (Merged) ---
     "streamlit>=1.32.0",            # 스트림릿 코어
     "streamlit-quill>=0.0.2",       # 텍스트 에디터 컴포넌트
     "requests>=2.31.0",             # HTTP 요청
     "beautifulsoup4>=4.12.0",       # HTML 파싱 (bs4)
+    "olefile>=0.47",
+    "python-docx>=1.2.0",
+    "pymupdf>=1.26.7",
 ]
 
 [tool.pytest.ini_options]
