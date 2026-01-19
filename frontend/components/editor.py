@@ -169,6 +169,14 @@ def render_editor():
 
             col_sk, col_clio = st.columns([1, 1], gap="small")
 
+            # [1] 처리 상태를 관리할 변수 초기화
+            if "clio_processing" not in st.session_state:
+                st.session_state.clio_processing = False
+
+            # [2] 버튼 클릭 시 상태를 True로 변경하는 콜백 함수
+            def start_clio():
+                st.session_state.clio_processing = True
+
             # 1) 스토리키퍼 분석 버튼
             with col_sk:
                 if st.button("스토리키퍼 (개연성)", use_container_width=True):
@@ -192,7 +200,15 @@ def render_editor():
 
             # 2) 클리오 분석 버튼
             with col_clio:
-                if st.button("클리오 (역사 고증)", use_container_width=True):
+                st.button(
+                        "클리오 (역사 고증)",
+                        use_container_width=True,
+                        disabled=st.session_state.clio_processing,
+                        on_click=start_clio
+                )
+
+            if st.session_state.clio_processing:
+                try:
                     with st.spinner("클리오가 역사적 사실을 대조하고 있습니다..."):
                         api_res = analyze_clio_api(current_doc, content_source)
 
@@ -206,6 +222,10 @@ def render_editor():
                         st.session_state.last_opened_expander = "clio"
                         st.session_state.clio_analyzed = True
                         st.rerun()
+                finally:
+                    # [4] 처리가 끝나면 상태를 다시 False로 돌리고 리런
+                    st.session_state.clio_processing = False
+                    st.rerun()
 
         # ---------------------------------------------------------
         # [결과 렌더링]
@@ -265,7 +285,7 @@ def render_editor():
                         st.markdown(textwrap.dedent(html).strip(), unsafe_allow_html=True)
 
         # (2) 클리오 결과
-        if st.session_state.clio_analyzed:
+        if st.session_state.get("clio_analyzed", False):
             label = f"클리오 결과"
             with st.expander(label, expanded=(st.session_state.last_opened_expander == "clio")):
 
