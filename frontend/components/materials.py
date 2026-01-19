@@ -149,17 +149,20 @@ def render_materials():
 # =================================================
 # [Helper] 파일 파싱 함수 정의
 # =================================================
-
 def get_hwp_text(file_obj):
     """
     HWP 파일에서 텍스트를 추출하는 헬퍼 함수 (HWP 5.0 이상)
     """
     try:
+        # [중요] 파일 포인터를 맨 앞으로 초기화해야 olefile이 읽을 수 있음
+        file_obj.seek(0)
+
         f = olefile.OleFileIO(file_obj)
         dirs = f.listdir()
 
-        # HWP 파일 구조 확인 (BodyText/Section)
+        # HWP 파일 구조 확인
         if ["FileHeader"] not in dirs or ["BodyText"] not in dirs:
+            st.warning("지원되지 않는 HWP 포맷이거나 암호화된 파일입니다.")
             return None
 
         sections = [d[1] for d in dirs if d[0] == "BodyText"]
@@ -168,23 +171,20 @@ def get_hwp_text(file_obj):
         for section in sections:
             bodytext = f.openstream("BodyText/" + section).read()
 
-            # HWP 텍스트 압축 해제 및 디코딩 로직
-            header = bodytext[:256]
-            count = (header[3] << 8) + header[2]  # 4바이트 정수 읽기 등이 필요할 수 있으나 약식으로 처리
-
-            unpacked_data = zlib.decompress(bodytext, -15)
-
-            # HWP 텍스트는 UTF-16 Little Endian으로 인코딩됨
-            # 실제로는 제어 문자 등을 제거하는 정밀한 로직이 필요하지만,
-            # 여기서는 텍스트 추출 위주로 단순화합니다.
-            decoded_text = unpacked_data.decode('utf-16-le')
-
-            # 텍스트만 남기고 제어문자 등 정제 (간단한 필터링)
-            text += decoded_text.replace("\r", "\n").replace("\x00", "")
+            # 압축 해제 시도
+            try:
+                unpacked_data = zlib.decompress(bodytext, -15)
+                decoded_text = unpacked_data.decode('utf-16-le')
+                text += decoded_text.replace("\r", "\n").replace("\x00", "")
+            except Exception:
+                # 압축 해제 실패 시 건너뜀
+                continue
 
         return text
+
     except Exception as e:
-        st.error(f"HWP 파싱 오류: {e}")
+        # 구체적인 에러 메시지 확인용
+        print(f"HWP Parsing Error: {e}")
         return None
 
 
@@ -196,6 +196,7 @@ def parse_file_content(uploaded_file):
     text = ""
 
     try:
+        uploaded_file.seek(0)
         # 1. TXT / MD 파일
         if file_ext in ['txt', 'md']:
             # UTF-8 시도 후 실패 시 EUC-KR(한글) 시도
@@ -210,6 +211,17 @@ def parse_file_content(uploaded_file):
             with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
                 for page in doc:
                     text += page.get_text()
+
+            # ---------------------------------------------------------
+            # [✅ 추가된 로직] PDF 줄바꿈 보정 (전처리)
+            # ---------------------------------------------------------
+            if text:
+                # 원리: "마침표(.)나 물음표(?), 느낌표(!)가 아닌 글자" 뒤에 오는 줄바꿈(\n)을 공백으로 치환
+                # 이렇게 하면 문장 중간에 잘린 줄바꿈은 사라지고, 진짜 문단 바꿈은 유지됩니다.
+                text = re.sub(r'(?<![\.\?\!])\n', ' ', text)
+
+                # 혹시 모를 다중 공백 제거 (선택사항)
+                text = re.sub(r'  +', ' ', text)
 
         # 3. Word (DOCX) 파일
         elif file_ext == 'docx':
