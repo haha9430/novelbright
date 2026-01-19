@@ -104,23 +104,26 @@ def render_materials():
                     if uploaded_file is not None:
                         if st.button("파일 내용 적용하기", use_container_width=True):
                             with st.spinner("파일 내용을 분석 중입니다..."):
-                                # 위에서 정의한 함수 호출
                                 extracted_text = parse_file_content(uploaded_file)
 
                                 if extracted_text:
-                                    # session_state에 있는 데이터 업데이트
+                                    # 1. 데이터 객체 업데이트 (백엔드 저장용)
                                     sel_mat['content'] = extracted_text
                                     sel_mat['title'] = uploaded_file.name
 
-                                    # (중요) 텍스트 에리어의 값 갱신을 위해 session_state 업데이트가 필요할 수 있음
-                                    # 만약 sel_mat이 st.session_state의 일부라면 아래 코드로 충분
+                                    # 2. [핵심] Streamlit 위젯 상태 강제 업데이트 (화면 표시용)
+                                    # 이 부분이 있어야 rerurn 시 text_area와 text_input 값이 바뀝니다.
+                                    st.session_state["mat_content"] = extracted_text
+                                    st.session_state["mat_title"] = uploaded_file.name
 
                                     st.toast(f"'{uploaded_file.name}' 내용을 불러왔습니다!", icon="✅")
                                     st.rerun()
                                 else:
-                                    st.error("텍스트를 추출하지 못했거나 빈 파일입니다.")
+                                    st.error("텍스트를 추출하지 못했습니다.")
 
                 # 내용 편집 (TextArea)
+                # key="mat_content"가 설정되어 있으므로, 위에서 st.session_state["mat_content"]를
+                # 업데이트해주면 value=... 보다 세션 상태값이 우선 적용되어 화면이 바뀝니다.
                 new_ctx = st.text_area(
                     "내용",
                     value=sel_mat.get('content', ''),
@@ -129,7 +132,7 @@ def render_materials():
                     key="mat_content"
                 )
 
-                # 텍스트 에리어 수정 사항 반영
+                # 사용자가 타이핑해서 수정했을 때를 위한 로직
                 if new_ctx != sel_mat.get('content', ''):
                     sel_mat['content'] = new_ctx
 
