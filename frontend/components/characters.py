@@ -1,3 +1,5 @@
+import streamlit as st
+
 import sys
 import os
 from pathlib import Path
@@ -25,7 +27,8 @@ except ImportError as e:
     # FileProcessor가 없을 경우를 대비한 더미
     class FileProcessor:
         @staticmethod
-        def load_file_content(path): return f"[Error] Module not found: {e}"
+        def load_file_content(path):
+            return f"[Error] Module not found: {e}"
 
 
     print(f"⚠️ [Import Warning] 모듈을 불러오지 못해 더미 함수를 사용합니다: {e}")
@@ -125,8 +128,12 @@ def render_characters(proj):
                     # 상세 정보 토글
                     with st.expander("상세 설정"):
                         new_name = st.text_input("이름", value=char["name"], key=f"char_name_{char['id']}")
-                        new_desc = st.text_area("설명", value=char.get("desc", ""), height=100,
-                                                key=f"char_desc_{char['id']}")
+                        new_desc = st.text_area(
+                            "설명",
+                            value=char.get("desc", ""),
+                            height=100,
+                            key=f"char_desc_{char['id']}"
+                        )
 
                         # [팀원 기능 반영] 저장 시 API 호출
                         if st.button("저장", key=f"save_char_{char['id']}", use_container_width=True):
