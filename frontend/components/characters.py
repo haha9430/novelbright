@@ -2,6 +2,7 @@ import sys
 import os
 from pathlib import Path
 
+
 # [해결 핵심] 프로젝트 루트를 파이썬 경로에 추가하여 루트에 있는 api.py를 찾게 만듭니다.
 root_path = str(Path(__file__).resolve().parents[2])
 if root_path not in sys.path:
