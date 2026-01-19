@@ -72,61 +72,58 @@ class ManuscriptAnalyzer:
 
     def analyze_manuscript(self, text: str) -> Dict[str, Any]:
         """
-        [최종 수정] 명제 추출 -> 일괄 검증 -> 고증 오류만 리포팅
+        [최종 수정] 1차(탐지) + 2차(감수) 의견 동시 리포팅 버전
         """
         print(f"📄 정밀 고증 분석 시작 (총 {len(text)}자)")
 
         # 1. 텍스트 분할 및 명제(Query) 추출
         chunks = self.text_splitter.split_text(text)
-        all_query_items = []  # 리스트로 변경 (중복 허용)
+        all_query_items = []
 
         for i, chunk in enumerate(chunks):
-            # 변경된 프롬프트로 '검증 명제'들 추출
+            # [토큰 압축] 내부에서 _compress_text 호출
             items = self._extract_search_queries(chunk)
 
             for item in items:
                 kw = item['keyword']
                 origin_snippet = item.get('original_sentence', '')
 
-                # --- 위치 찾기 로직 시작 ---
+                # --- 위치 찾기 로직 ---
                 start_idx, end_idx = self._find_exact_position(text, origin_snippet, 0)
 
-                # 내용 일치 확인 (공백/특수문자 제외하고 비교)
+                # 내용 일치 확인
                 is_match = False
                 if start_idx != -1:
                     actual_text = text[start_idx:end_idx]
                     if re.sub(r'[\s\W_]+', '', actual_text) == re.sub(r'[\s\W_]+', '', origin_snippet):
                         is_match = True
 
-                # 재시도: 위치를 못 찾았거나 내용이 다를 경우
+                # 재시도
                 if start_idx == -1 or not is_match:
                     new_snippet = self._retry_extract_sentence(chunk, kw)
                     if new_snippet:
-                        # 재추출된 문장으로 다시 찾기
                         s_idx, e_idx = self._find_exact_position(text, new_snippet, 0)
                         if s_idx != -1:
                             item['original_sentence'] = new_snippet
                             start_idx, end_idx = s_idx, e_idx
 
-                # 결과 저장 (위치 찾기 실패했더라도 검증은 수행하기 위해 저장)
                 item['start_index'] = start_idx
                 item['end_index'] = end_idx
                 all_query_items.append(item)
-                # --- 위치 찾기 로직 끝 ---
 
         print(f"   -> 총 {len(all_query_items)}개의 검증 명제 추출됨")
 
         known_settings = []
-        historical_context = [] # 최종 오류 리포트용
+        historical_context = []
         verification_queue = []
 
-        # 2. 검색 수행 (검증 명제별로 수행)
+        # 2. 검색 수행
         for item_data in all_query_items:
-            proposition = item_data['keyword']  # 검증할 명제 (예: "1916년 게베어 사용 여부")
+            proposition = item_data['keyword']
             query_string = item_data['search_query']
             origin_sent = item_data.get('original_sentence', '')
 
-            # 허구 필터링 (명제 안에 설정 키워드가 포함되면 패스)
+            # 허구 필터링
             is_fiction = False
             for fiction_term in self.setting_keywords:
                 if fiction_term in proposition or fiction_term in origin_sent:
@@ -139,18 +136,14 @@ class ManuscriptAnalyzer:
 
             print(f"🔍 검색 수행: '{query_string}'")
 
-            # Step A: 로컬 DB
             search_data = self._check_local_db(query_string)
-
-            # Step B: 웹 검색
             if not search_data:
                 search_data = self._search_web(query_string)
                 time.sleep(0.1)
 
-            # Step C: 큐 적재 (ID 부여)
             if search_data:
                 verification_queue.append({
-                    "id": len(verification_queue), # 고유 ID 부여 (배치 처리용)
+                    "id": len(verification_queue),
                     "keyword": proposition,
                     "query": query_string,
                     "content": search_data['content'],
@@ -174,28 +167,38 @@ class ManuscriptAnalyzer:
 
                 # 결과 매핑
                 for item in batch_items:
-                    # ID를 키로 사용하여 결과 매칭
                     item_id = str(item['id'])
-                    ver = final_results.get(item_id)
 
-                    # ✅ [핵심] 고증 오류(is_positive: False)인 경우만 리포트
-                    if ver and ver.get('is_relevant') and ver.get('is_positive') is False:
+                    # 1차, 2차 결과 모두 가져오기
+                    res_1 = first_results.get(item_id, {})
+                    res_2 = final_results.get(item_id, {})
+
+                    # ✅ 고증 오류(is_positive: False)인 경우 리포트
+                    # (2차 검증 결과가 False이면 최종 오류로 간주)
+                    if res_2 and res_2.get('is_relevant') and res_2.get('is_positive') is False:
+
+                        # [변경 포인트] 1차 근거와 2차 근거를 합침
+                        reason_1 = res_1.get('reason', '자료 부족')
+                        reason_2 = res_2.get('reason', '판단 불가')
+
+                        # 보기 좋게 포맷팅
+                        combined_reason = f"[1차 탐지] {reason_1}\n[2차 감수] {reason_2}"
 
                         final_obj = {
-                            "keyword": item['keyword'], # 검증 명제
-                            "reason": ver['reason'],
+                            "keyword": item['keyword'],
+                            "reason": combined_reason, # 합쳐진 이유 저장
                             "original_sentence": item['context'],
                             "source": item['search_source'],
                             "start_index": item['item_data'].get('start_index'),
                             "end_index": item['item_data'].get('end_index')
                         }
                         historical_context.append(final_obj)
-                        print(f"      ❌ [오류 확정] {item['keyword']}: {ver['reason']}")
+                        print(f"      ❌ [오류 확정] {item['keyword']}")
 
         return {
             "total_checked": len(all_query_items),
             "error_count": len(historical_context),
-            "historical_context": historical_context, # 오류 항목만 반환
+            "historical_context": historical_context,
             "setting_terms_found": list(set(known_settings))
         }
 
