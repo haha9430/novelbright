@@ -72,18 +72,14 @@ class ManuscriptAnalyzer:
 
     def analyze_manuscript(self, text: str) -> Dict[str, Any]:
         """
-        [메인 로직]
-        1. 텍스트 분할
-        2. '검색 쿼리' 생성 (단순 키워드 추출 X)
-        3. 필터링 (설정 DB 확인)
-        4. 로컬 DB 조회 -> 웹 검색 -> 결과 검증
+        [수정됨] 들여쓰기 오류 수정 및 리스트 변환
         """
         print(f"📄 원고 분석 시작 (총 {len(text)}자)")
 
-        # LLM에게는 여전히 청크 단위로 줍니다 (토큰 제한 때문)
         chunks = self.text_splitter.split_text(text)
 
-        all_query_items = {}
+        # [수정 1] 딕셔너리 대신 리스트 사용 (중복 방지)
+        all_query_items = []
 
         for i, chunk in enumerate(chunks):
             items = self._extract_search_queries(chunk)
@@ -92,193 +88,148 @@ class ManuscriptAnalyzer:
                 kw = item['keyword']
                 origin_snippet = item.get('original_sentence', '')
 
-                # [NEW] 전체 텍스트(text)에서, 현재 커서(current_global_cursor) 이후부터 찾기
+                # 1. 위치 찾기 시도
                 start_idx, end_idx = self._find_exact_position(
                     full_text=text,
                     target_snippet=origin_snippet,
                     start_from=0
                 )
 
-                # 검증 로직 시작
+                # 내부 헬퍼 함수
                 def _is_content_equal(text1, text2):
-                    """특수문자/공백 제거 후 내용 일치 여부 확인"""
-                    def normalize(s):
-                        return re.sub(r'[\s\W_]+', '', s)
+                    def normalize(s): return re.sub(r'[\s\W_]+', '', s)
                     return normalize(text1) == normalize(text2)
 
                 def _retry_extract_sentence(chunk_text, keyword):
-                    """
-                    [LLM 재요청] 특정 키워드에 대해 문장 추출만 다시 수행
-                    """
-                    prompt = f"""
-                    당신은 텍스트 분석가입니다.
-                    아래 텍스트에서 키워드 '{keyword}'가 포함된 문장을 **토씨 하나 틀리지 말고 그대로** 추출하세요.
-
-                    [규칙]
-                    1. 문장이 너무 길면, 키워드 주변 10어절만 잘라서 가져오세요.
-                    2. 설명이나 수식어를 붙이지 말고 오직 **본문 내용만** 출력하세요.
-                    3. 없으면 'None'이라고만 출력하세요.
-                    """
-
+                    prompt = f"키워드 '{keyword}'가 포함된 문장을 원문 그대로 추출하세요. 없으면 None."
                     try:
-                        response = self.llm.invoke([
-                            SystemMessage(content=prompt),
-                            HumanMessage(content=f"Text: {chunk_text[:3000]}") # 문맥 제공
-                        ])
-                        result = response.content.strip().strip('"\'')
+                        res = self.llm.invoke([SystemMessage(content=prompt), HumanMessage(content=chunk_text[:3000])])
+                        val = res.content.strip().strip('"\'')
+                        return None if val == "None" or len(val) < 2 else val
+                    except: return None
 
-                        if result == "None" or len(result) < 2:
-                            return None
-                        return result
-
-                    except Exception as e:
-                        print(f"⚠️ 재시도 중 에러: {e}")
-                        return None
-
+                # 2. 내용 일치 여부 확인
                 is_match_success = False
-
                 if start_idx != -1:
                     actual_found_text = text[start_idx:end_idx]
-
-                    # 1. 완벽 일치하는지 확인
                     if actual_found_text == origin_snippet:
                         is_match_success = True
-                    else:
-                        # 2. [불일치 발생] -> 정규화(Normalization) 후 재비교
-                        # 공백, 줄바꿈, 특수문자를 다 떼고 비교해서 글자 알맹이가 같은지 확인
-                        if _is_content_equal(actual_found_text, origin_snippet):
-                            print(f"   ⚠️ [보정 성공] 문장은 다르지만 내용은 같습니다.")
-                            print(f"       LLM: {repr(origin_snippet)}")
-                            print(f"       Raw: {repr(actual_found_text)}")
-                            is_match_success = True
-                        else:
-                            print(f"   ❌ [불일치] 위치는 찾았으나 내용이 너무 다릅니다.")
-                            # 여기서 재시도 로직을 수행하거나, 그냥 이 위치를 신뢰할지 결정
-                            # 보통 _find_exact_position이 3단계(유사도)까지 갔다면,
-                            # 실제로는 맞는 위치일 확률이 높음.
+                    elif _is_content_equal(actual_found_text, origin_snippet):
+                        is_match_success = True
 
-                # 3. [재시도 로직] 위치를 아예 못 찾았거나, 찾았는데 내용이 영 딴판인 경우
+                # 3. [재시도 로직] (실패한 경우에만 진입)
                 if start_idx == -1 or (start_idx != -1 and not is_match_success):
-                    print(f"   🔄 [재시도] '{kw}'에 대한 문장 추출을 다시 시도합니다...")
-
-                    # LLM에게 해당 키워드로 다시 문장을 뽑아달라고 요청 (Retry 함수 호출)
+                    print(f"   🔄 [재시도] '{kw}' 위치 재탐색...")
                     new_snippet = _retry_extract_sentence(chunk, kw)
-
                     if new_snippet:
-                        print(f"      -> 재추출된 문장: {new_snippet}")
-                        # 다시 위치 찾기 시도
                         start_idx, end_idx = self._find_exact_position(text, new_snippet, 0)
-
                         if start_idx != -1:
-                            print(f"      ✅ 재시도 성공! 위치 찾음.")
-                            item['original_sentence'] = new_snippet # 업데이트
+                            item['original_sentence'] = new_snippet
 
+                # -------------------------------------------------------------
+                # 🚨 [핵심 수정] 들여쓰기를 왼쪽으로 당겨서 if문 밖으로 뺐습니다!
+                # 이제 성공하든 실패하든 무조건 실행되어 결과가 저장됩니다.
+                # -------------------------------------------------------------
+                if start_idx != -1:
+                    item['start_index'] = start_idx
+                    item['end_index'] = end_idx
+                else:
+                    item['start_index'] = -1
+                    item['end_index'] = -1
 
-                    # 편의상 위치 찾기 로직이 완료되었다고 가정하고 item 업데이트
-                    if start_idx != -1:
-                        item['start_index'] = start_idx
-                        item['end_index'] = end_idx
-                    else:
-                        item['start_index'] = -1
-                        item['end_index'] = -1
+                # [수정 2] 리스트에 추가 (Append)
+                all_query_items.append(item)
 
-                    all_query_items[kw] = item
+        print(f"   -> 총 {len(all_query_items)}개의 검색 후보 추출됨")
 
-            print(f"   -> 총 {len(all_query_items)}개의 검색 후보 추출됨")
+        known_settings = []
+        historical_context = []
+        verification_queue = []
 
-            known_settings = []
-            historical_context = []
+        # --- [Step 2] 검색 수행 ---
+        for item_data in all_query_items:
+            keyword = item_data['keyword']
+            query_string = item_data['search_query']
+            origin_sent = item_data.get('original_sentence', '')
 
-            # [NEW] 검증 대기열 (검색 결과를 여기다 모음)
-            verification_queue = []
+            # 필터링
+            is_fiction = False
+            for fiction_term in self.setting_keywords:
+                if fiction_term in keyword or keyword in fiction_term:
+                    is_fiction = True
+                    break
 
-            # --- [2] 검색 수행 (순차 실행) ---
-            for keyword, item_data in all_query_items.items():
-                query_string = item_data['search_query']
-                origin_sent = item_data.get('original_sentence', '')
+            if is_fiction:
+                known_settings.append(keyword)
+                continue
 
-                # 필터링
-                is_fiction = False
-                for fiction_term in self.setting_keywords:
-                    if fiction_term in keyword or keyword in fiction_term:
-                        is_fiction = True
-                        break
-                if is_fiction:
-                    known_settings.append(keyword)
-                    continue
+            print(f"🔍 검색 수행: '{keyword}'")
 
-                print(f"🔍 검색 수행: '{keyword}'")
+            # 로컬 DB -> 웹 검색
+            search_data = self._check_local_db(keyword)
+            if not search_data:
+                search_data = self._search_web(query_string)
+                time.sleep(0.1)
 
-                # 로컬 DB -> 웹 검색
-                search_data = self._check_local_db(keyword)
-                if not search_data:
-                    search_data = self._search_web(query_string)
-                    time.sleep(0.1) # 텀을 약간 둠
+            if search_data:
+                item_id = str(len(verification_queue))
 
-                # [변경점] 검색 결과가 있으면 큐에 추가 (검증은 나중에!)
-                if search_data:
-                    # 나중에 매핑하기 위해 ID 부여
-                    item_id = str(len(verification_queue))
+                verification_item = {
+                    "id": item_id,
+                    "keyword": keyword,
+                    "query": query_string,
+                    "content": search_data['content'],
+                    "context": origin_sent,
+                    "source": search_data.get('source', 'Unknown'),
+                    "start_index": item_data.get('start_index'),
+                    "end_index": item_data.get('end_index')
+                }
+                verification_queue.append(verification_item)
 
-                    # 검증에 필요한 데이터를 패키징
-                    verification_item = {
-                        "id": item_id,
-                        "keyword": keyword,
-                        "query": query_string,
-                        "content": search_data['content'],
-                        "context": origin_sent,
-                        "source": search_data.get('source', 'Unknown'),
-                        # 위치 정보 백업
-                        "start_index": item_data.get('start_index'),
-                        "end_index": item_data.get('end_index')
-                    }
-                    verification_queue.append(verification_item)
+        # --- [Step 3] 일괄 검증 ---
+        if verification_queue:
+            print(f"🚀 총 {len(verification_queue)}건에 대해 일괄 검증을 수행합니다...")
 
-            # --- [3] 일괄 검증 (Batch Verification) ---
-            if verification_queue:
-                print(f"🚀 총 {len(verification_queue)}건에 대해 일괄 검증을 수행합니다...")
+            BATCH_SIZE = 5
+            for i in range(0, len(verification_queue), BATCH_SIZE):
+                batch_items = verification_queue[i : i + BATCH_SIZE]
+                print(f"   -> Batch {i//BATCH_SIZE + 1} 처리 중 ({len(batch_items)}건)...")
 
-                BATCH_SIZE = 5 # 5개씩 묶어서 처리
-                for i in range(0, len(verification_queue), BATCH_SIZE):
-                    batch_items = verification_queue[i : i + BATCH_SIZE]
-                    print(f"   -> Batch {i//BATCH_SIZE + 1} 처리 중 ({len(batch_items)}건)...")
+                batch_results = self._verify_batch_relevance(batch_items)
 
-                    # [NEW] 배치 검증 메서드 호출
-                    batch_results = self._verify_batch_relevance(batch_items)
+                for item in batch_items:
+                    item_id = item['id']
+                    res = batch_results.get(item_id, batch_results.get(int(item_id), {}))
 
-                    # 결과 매핑
-                    for item in batch_items:
-                        item_id = item['id']
-                        # LLM 결과 가져오기 (없으면 기본값 실패 처리)
-                        res = batch_results.get(item_id, {"is_relevant": True, "is_positive": True, "reason": "검증 응답 누락"})
+                    if not res:
+                        res = {"is_relevant": True, "is_positive": True, "reason": "검증 응답 누락"}
 
-                        # 1. 관련성 확인 (관련 없으면 탈락)
-                        if res.get('is_relevant', True):
-                            final_obj = {
-                                "keyword": item['keyword'],
-                                "content": item['content'],
-                                "source": item['source'],
-                                "is_relevant": True,
-                                "is_positive": res.get('is_positive', True),
-                                "reason": res.get('reason', ''),
-                                "original_sentence": item['context'],
-                                "start_index": item['start_index'],
-                                "end_index": item['end_index']
-                            }
-                            historical_context.append(final_obj)
+                    if res.get('is_relevant', True):
+                        final_obj = {
+                            "keyword": item['keyword'],
+                            "content": item['content'],
+                            "source": item['source'],
+                            "is_relevant": True,
+                            "is_positive": res.get('is_positive', True),
+                            "reason": res.get('reason', ''),
+                            "original_sentence": item['context'],
+                            "start_index": item['start_index'],
+                            "end_index": item['end_index']
+                        }
+                        historical_context.append(final_obj)
 
-                            if final_obj['is_positive']:
-                                print(f"      ✅ [통과] {item['keyword']}")
-                            else:
-                                print(f"      ❌ [오류] {item['keyword']} ({final_obj['reason']})")
+                        if final_obj['is_positive']:
+                            print(f"      ✅ [통과] {item['keyword']}")
                         else:
-                            print(f"      🗑️ [무관] {item['keyword']}")
+                            print(f"      ❌ [오류] {item['keyword']} ({final_obj['reason']})")
+                    else:
+                        print(f"      🗑️ [무관] {item['keyword']}")
 
-            return {
-                "found_entities_count": len(all_query_items),
-                "setting_terms_found": list(set(known_settings)),
-                "historical_context": historical_context
-            }
+        return {
+            "found_entities_count": len(all_query_items),
+            "setting_terms_found": list(set(known_settings)),
+            "historical_context": historical_context
+        }
 
     def _extract_search_queries(self, text: str) -> List[Dict[str, str]]:
         """
