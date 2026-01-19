@@ -71,7 +71,7 @@ def render_materials():
         if sel_mat:
             with st.container(border=True):
                 c_head, c_btn = st.columns([8, 1])
-                c_head.caption("📝 자료 상세 내용")
+                c_head.caption("자료 상세 내용")
 
                 # 삭제 버튼
                 if c_btn.button("🗑", key=f"del_m_{sel_mat['id']}"):
@@ -87,7 +87,7 @@ def render_materials():
                 # =================================================
                 # [NEW] 파일 업로드 영역 (텍스트 추출)
                 # =================================================
-                with st.expander("📂 파일에서 내용 불러오기 (HWP, PDF, Word)", expanded=False):
+                with st.expander("파일에서 내용 불러오기 (HWP, PDF, Word)", expanded=False):
                     uploaded_file = st.file_uploader(
                         "파일을 업로드하면 텍스트를 추출하여 아래 내용에 덮어씁니다.",
                         type=["txt", "md", "pdf", "docx", "hwp"],

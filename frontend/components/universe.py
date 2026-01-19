@@ -64,11 +64,11 @@ def _render_worldview_tab(proj):
     """세계관 설정 탭: 텍스트 직접 입력 + 파일 업로드"""
 
     # [추가됨] 상단: 파일로 세계관 추가하기
-    with st.expander("📂 파일로 세계관 자료 추가하기", expanded=False):
+    with st.expander("파일로 세계관 자료 추가하기", expanded=False):
         st.markdown("세계관 설정이 담긴 텍스트, PDF 문서를 업로드하여 AI에게 학습시킵니다.")
         uploaded_file = st.file_uploader("파일 선택", type=["txt", "pdf", "docx"], key="world_uploader")
 
-        if uploaded_file and st.button("🚀 세계관 분석 및 추가", use_container_width=True):
+        if uploaded_file and st.button("세계관 분석 및 추가", use_container_width=True):
             with st.spinner("파일을 분석하여 세계관 DB에 저장 중입니다..."):
                 try:
                     content = FileProcessor.load_file_content(uploaded_file)
