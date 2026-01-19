@@ -1,4 +1,3 @@
-# api.py
 import sys
 import os
 import json
@@ -51,11 +50,14 @@ def _extract_world_from_plot(plot_config: dict) -> dict:
 
 
 def _load_story_history() -> dict:
+    # ✅ 핵심: load_state 폴더의 story_history.json을 본다
     here = os.getcwd()
     path = os.path.join(
         here,
         "app",
-        "data",
+        "service",
+        "story_keeper_agent",
+        "load_state",
         "story_history.json",
     )
     return _safe_read_json(path)
@@ -90,61 +92,24 @@ def _load_character_config() -> dict:
 
 
 def _call_upsert_character(name: str, text: str):
-    # 1. [중요] 현재 실행 중인 위치(CWD)와 실제 저장 경로를 찍어봅니다.
     print(f"📂 현재 실행 위치(CWD): {os.getcwd()}")
-
-    # 상대 경로 'app/data/...'는 실행 위치에 따라 달라집니다.
-    # 로컬 테스트라면 보통 프로젝트 루트에서 실행하므로 그대로 둬도 되지만,
-    # 확실히 하기 위해 절대 경로로 바꿔서 확인해보세요.
     target_path = os.path.abspath("app/data/characters.json")
     print(f"💾 실제 저장 시도 경로: {target_path}")
 
     try:
-        # 2. upsert_character 호출
         result = upsert_character(
             name=name,
             features=text,
-            db_path=target_path # 👈 경로를 직접 주입
+            db_path=target_path
         )
 
-        # 3. 결과 로그 출력
-        if result['status'] == 'success':
-            print(f"✅ 저장 성공! 저장된 키(Key): {result['name']}")
-            print(f"   👉 행동: {result['action']} (inserted=신규, merged=병합)")
+        if result.get("status") == "success":
+            print(f"✅ 저장 성공! 저장된 키(Key): {result.get('name')}")
+            print(f"   👉 행동: {result.get('action')}")
         else:
             print(f"❌ 저장 실패 응답: {result}")
 
         return result
-        '''
-        sig = inspect.signature(upsert_character)
-        params = sig.parameters
-
-        text_keys = [
-            "text", "content", "profile", "description", "setting", "settings",
-            "raw", "data", "prompt", "value", "info", "bio",
-        ]
-
-        kwargs = {}
-        if "name" in params:
-            kwargs["name"] = name
-
-        chosen_text_key = None
-        for k in text_keys:
-            if k in params:
-                chosen_text_key = k
-                break
-
-        if chosen_text_key:
-            kwargs[chosen_text_key] = text
-            if "name" in params:
-                return upsert_character(**kwargs)
-            return upsert_character(name, **{chosen_text_key: text})
-
-        if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
-            return upsert_character(name=name, text=text)
-
-        return upsert_character(name, text)
-        '''
     except TypeError:
         return upsert_character(name, text)
     except Exception:
@@ -192,11 +157,17 @@ def manuscript_feedback(
 
         history = _load_story_history()
         character_config = _load_character_config()
-
         story_state = {"world": world, "history": history}
 
         chunks = split_into_chunks(full_text_str)
+
+        # ✅ ingest_episode 안에서 summarize_and_save가 돌고,
+        # ✅ 그 결과가 load_state/story_history.json에 저장됨 (extracter.py에서 경로 통일함)
         ingest_episode(req=IngestEpisodeRequest(episode_no=episode_no, text_chunks=chunks))
+
+        # 저장 이후 최신 history 다시 로드
+        history_after = _load_story_history()
+        story_state = {"world": world, "history": history_after}
 
         episode_facts = manager.extract_facts(episode_no, full_text_str, story_state)
         if isinstance(episode_facts, dict):
@@ -212,23 +183,25 @@ def manuscript_feedback(
         )
 
         if not issues:
-            base = {
-                "episode_no": episode_no,
-                "message": "수정할 사안이 없습니다!",
-                "issues": [],
-            }
+            base = {"episode_no": episode_no, "message": "수정할 사안이 없습니다!", "issues": []}
         else:
-            base = {
-                "episode_no": episode_no,
-                "issues": issues,
-            }
+            base = {"episode_no": episode_no, "issues": issues}
 
         if debug_raw:
             base["debug"] = {
+                "cwd": os.getcwd(),
+                "history_path": os.path.join(
+                    os.getcwd(),
+                    "app",
+                    "service",
+                    "story_keeper_agent",
+                    "load_state",
+                    "story_history.json",
+                ),
                 "full_text_len": len(full_text_str),
                 "plot_loaded": bool(plot_config),
                 "world_loaded": bool(world),
-                "history_loaded": bool(history),
+                "history_loaded": bool(history_after),
                 "character_count": len(character_config.get("characters", [])) if isinstance(character_config, dict) else 0,
                 "issues_count": len(issues) if isinstance(issues, list) else 0,
             }

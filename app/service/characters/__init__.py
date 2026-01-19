@@ -5,7 +5,7 @@ import os
 import re
 from typing import Any, Dict, List, Tuple, Union
 
-DB_PATH = "app/data/characters.json"
+DB_PATH = "/app/data/characters.json"
 
 from app.service.characters.solar_client import SolarClient
 

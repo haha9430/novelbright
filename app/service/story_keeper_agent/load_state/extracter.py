@@ -6,20 +6,14 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-# 라이브러리가 없을 경우를 대비한 안전장치
 try:
     from dotenv import load_dotenv
     from langchain_upstage import ChatUpstage
 except ImportError:
-    pass
+    ChatUpstage = None  # type: ignore
 
-
-# =========================================================
-# 🛠️ 유틸리티 함수
-# =========================================================
 
 def _project_root() -> Path:
-    # 현재 파일 위치 기준 프로젝트 루트 찾기 (깊이에 따라 조정 필요)
     return Path(__file__).resolve().parents[4]
 
 
@@ -80,13 +74,11 @@ def _pick_summary(text: str) -> List[str]:
     return summary[:8]
 
 
-# =========================================================
-# 🏛️ PlotManager 클래스
-# =========================================================
-
 class PlotManager:
     """
-    plot.json / story_history.json 관리 및 세계관 설정 업데이트
+    plot.json / story_history.json 관리
+    ✅ 요구사항: story_history.json은 load_state 폴더에 저장/로드
+      - app/service/story_keeper_agent/load_state/story_history.json
     """
 
     def __init__(self):
@@ -102,21 +94,19 @@ class PlotManager:
 
         self.llm = self._init_llm()
 
-        # [경로 설정] K8s / Local 하이브리드
-        k8s_data_dir = Path("/app/app/data")
+        # ✅ 핵심: story_history는 무조건 load_state 폴더
+        self.load_state_dir = Path(__file__).resolve().parent
+        self.history_file = self.load_state_dir / "story_history.json"
 
-        if k8s_data_dir.exists():
-            self.data_dir = k8s_data_dir
-        else:
-            # 로컬 환경용
-            self.data_dir = _project_root() / "app" / "data"
-
+        # plot.json은 기존대로 app/data 사용 (원하면 이것도 load_state로 옮길 수 있음)
+        self.data_dir = _project_root() / "app" / "data"
         self.global_setting_file = self.data_dir / "plot.json"
-        self.history_file = self.data_dir / "story_history.json"
 
-        # 디렉토리 생성 보장
+        self.load_state_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        print(f"📂 Active Data Dir: {self.data_dir}")
+
+        print(f"📂 Active History File: {self.history_file}")
+        print(f"📂 Active Plot File: {self.global_setting_file}")
 
     def _fix_ssl_cert_env(self) -> None:
         try:
@@ -128,9 +118,9 @@ class PlotManager:
         except Exception:
             pass
 
-    def _init_llm(self) -> Optional[ChatUpstage]:
+    def _init_llm(self) -> Optional["ChatUpstage"]:
         key = (os.getenv("UPSTAGE_API_KEY") or "").strip()
-        if not key:
+        if not key or ChatUpstage is None:
             return None
 
         model = (os.getenv("UPSTAGE_CHAT_MODEL") or "").strip() or "solar-pro"
@@ -146,7 +136,6 @@ class PlotManager:
         if not raw:
             return {}
         raw = raw.strip()
-        # 마크다운 코드 블록 제거
         raw = re.sub(r"^```(?:json)?", "", raw, flags=re.IGNORECASE | re.MULTILINE).strip()
         raw = re.sub(r"```$", "", raw, flags=re.MULTILINE).strip()
 
@@ -159,31 +148,17 @@ class PlotManager:
         except Exception:
             return {}
 
-    # ---------------------------------------------------------
-    # ✅ (핵심 수정) 호환성 유지: episode_no 인자 처리 추가
-    # ---------------------------------------------------------
-    def update_global_settings(self, text: Union[str, int], episode_no: Optional[Union[int, str]] = 0) -> Dict[
-        str, Any]:
-        """
-        [Ingest용 & Legacy 호환]
-        - ingest 호출 시: update_global_settings("텍스트내용") -> episode_no=0
-        - 기존 호출 시: update_global_settings(episode_no=1, text="내용") 또는 (1, "내용")
-        """
-
-        # 1. 인자 순서/타입 자동 보정 (순서가 바뀌어 들어와도 처리)
+    def update_global_settings(self, text: Union[str, int], episode_no: Optional[Union[int, str]] = 0) -> Dict[str, Any]:
         real_text = ""
 
-        # Case A: (text="...", episode_no=...) -> 정상
         if isinstance(text, str):
             real_text = text
-        # Case B: (text=1, episode_no="...") -> 순서 바뀜 (episode_no 자리에 텍스트가 들어옴)
         elif isinstance(text, int) and isinstance(episode_no, str):
             real_text = episode_no
 
         if not real_text or not real_text.strip():
             return {"status": "error", "message": "empty text"}
 
-        # 2. 요약 및 장르 추출
         summary = _pick_summary(real_text)
 
         allowed_genres = [
@@ -221,7 +196,6 @@ class PlotManager:
                 else:
                     g_list = []
 
-                # 필터링
                 allowed = set(allowed_genres)
                 cleaned = []
                 for x in g_list:
@@ -232,26 +206,21 @@ class PlotManager:
             except Exception:
                 pass
 
-        # 3. 데이터 저장
         current_data = _read_json(self.global_setting_file, default={})
         current_data["summary"] = summary
         current_data["genre"] = genre
 
         try:
             _write_json(self.global_setting_file, current_data)
-            print(f"🌍 [세계관 설정] 업데이트 완료: {self.global_setting_file}")
             return {"status": "success", "data": current_data}
         except Exception as e:
-            print(f"🔥 [세계관 설정] 저장 실패: {e}")
             return {"status": "error", "message": str(e)}
 
-    # ---------------------------------------------------------
-    # (기존 기능) 에피소드 요약 및 히스토리 저장
-    # ---------------------------------------------------------
     def summarize_and_save(self, episode_no: int, full_text: str) -> Dict[str, Any]:
         if not isinstance(full_text, str) or not full_text.strip():
             return {"status": "error", "message": "empty text"}
 
+        # ✅ 이제 여기 저장/로드 모두 load_state/story_history.json
         history_data = _read_json(self.history_file, default={})
         prev_flow = history_data.get(str(int(episode_no) - 1), {}).get("story_flow", "")
 
@@ -305,9 +274,6 @@ class PlotManager:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    # ---------------------------------------------------------
-    # (기존 기능) 파이프라인용 팩트 추출
-    # ---------------------------------------------------------
     def extract_facts(self, episode_no: int, full_text: str, story_state: Dict[str, Any]) -> Dict[str, Any]:
         if self.llm is None:
             return {"episode_no": int(episode_no), "events": [], "characters": [], "state_changes": {}}
@@ -328,9 +294,12 @@ Input:
                 return {"episode_no": int(episode_no), "events": [], "characters": [], "state_changes": {}}
 
             data["episode_no"] = int(episode_no)
-            if "events" not in data: data["events"] = []
-            if "characters" not in data: data["characters"] = []
-            if "state_changes" not in data: data["state_changes"] = {}
+            if "events" not in data:
+                data["events"] = []
+            if "characters" not in data:
+                data["characters"] = []
+            if "state_changes" not in data:
+                data["state_changes"] = {}
             return data
         except Exception:
             return {"episode_no": int(episode_no), "events": [], "characters": [], "state_changes": {}}
@@ -344,18 +313,9 @@ class StoryHistoryManager:
         return self.pm.summarize_and_save(int(episode_no), full_text)
 
 
-
-# =========================================================
-# 📢 ingest_service 연결용 함수
-# =========================================================
 def update_world_setting(text: str) -> Dict[str, Any]:
-    """
-    PlotManager를 생성하고 설정을 업데이트하는 래퍼 함수.
-    ingest_service.py에서 이 함수를 import해서 사용합니다.
-    """
     try:
         manager = PlotManager()
-        # 이제 인자 하나만 넘겨도 내부에서 처리됨 (호환성 패치 적용됨)
         return manager.update_global_settings(text)
     except Exception as e:
         return {"status": "error", "message": str(e)}
