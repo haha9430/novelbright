@@ -7,7 +7,7 @@ import streamlit as st
 from components.common import get_current_project
 from components.sidebar import render_sidebar
 
-from api import save_world_setting_api, ingest_file_to_backend, get_story_history_api
+from frontend.api import save_world_setting_api, ingest_file_to_backend, get_story_history_api
 from app.common.file_input import FileProcessor
 
 

@@ -1,7 +1,9 @@
+# app/service/story_keeper_agent/api.py
 import sys
 import os
 import json
 import inspect
+from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
 
@@ -22,6 +24,15 @@ router = APIRouter(prefix="/story", tags=["story-keeper"])
 manager = PlotManager()
 
 
+def _project_root() -> Path:
+    # extracter.py랑 동일한 기준(루트 기준)으로 맞춤
+    return Path(__file__).resolve().parents[3]
+
+
+def _data_path(filename: str) -> str:
+    return str(_project_root() / "app" / "data" / filename)
+
+
 def _safe_read_json(path: str) -> dict:
     if not os.path.exists(path):
         return {}
@@ -34,8 +45,7 @@ def _safe_read_json(path: str) -> dict:
 
 
 def _load_plot_config() -> dict:
-    here = os.getcwd()
-    path = os.path.join(here, "app", "data", "plot.json")
+    path = _data_path("plot.json")
     return _safe_read_json(path)
 
 
@@ -50,15 +60,12 @@ def _extract_world_from_plot(plot_config: dict) -> dict:
 
 
 def _load_story_history() -> dict:
-    # ✅ 핵심: load_state 폴더의 story_history.json을 본다
-    here = os.getcwd()
-    path = os.path.join(here, "app", "data", "story_history.json")
+    path = _data_path("story_history.json")
     return _safe_read_json(path)
 
 
 def _load_character_config() -> dict:
-    here = os.getcwd()
-    path = os.path.join(here, "app", "data", "characters.json")
+    path = _data_path("characters.json")
     if not os.path.exists(path):
         return {"characters": []}
 
@@ -86,7 +93,7 @@ def _load_character_config() -> dict:
 
 def _call_upsert_character(name: str, text: str):
     print(f"📂 현재 실행 위치(CWD): {os.getcwd()}")
-    target_path = os.path.abspath("app/data/characters.json")
+    target_path = os.path.abspath(_data_path("characters.json"))
     print(f"💾 실제 저장 시도 경로: {target_path}")
 
     try:
@@ -107,6 +114,21 @@ def _call_upsert_character(name: str, text: str):
         return upsert_character(name, text)
     except Exception:
         raise
+
+
+@router.get(
+    "/history",
+    summary="Story History",
+    description="app/data/story_history.json을 그대로 반환",
+)
+def get_story_history():
+    try:
+        history = _load_story_history()
+        if not isinstance(history, dict):
+            history = {}
+        return {"history": history}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"history load failed: {e}")
 
 
 @router.post(
@@ -154,11 +176,8 @@ def manuscript_feedback(
 
         chunks = split_into_chunks(full_text_str)
 
-        # ✅ ingest_episode 안에서 summarize_and_save가 돌고,
-        # ✅ 그 결과가 load_state/story_history.json에 저장됨 (extracter.py에서 경로 통일함)
         ingest_episode(req=IngestEpisodeRequest(episode_no=episode_no, text_chunks=chunks))
 
-        # 저장 이후 최신 history 다시 로드
         history_after = _load_story_history()
         story_state = {"world": world, "history": history_after}
 
@@ -183,14 +202,7 @@ def manuscript_feedback(
         if debug_raw:
             base["debug"] = {
                 "cwd": os.getcwd(),
-                "history_path": os.path.join(
-                    os.getcwd(),
-                    "app",
-                    "service",
-                    "story_keeper_agent",
-                    "load_state",
-                    "story_history.json",
-                ),
+                "history_path": _data_path("story_history.json"),
                 "full_text_len": len(full_text_str),
                 "plot_loaded": bool(plot_config),
                 "world_loaded": bool(world),
