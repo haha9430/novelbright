@@ -1,28 +1,27 @@
 import os
 import sys
 
-# [1] 텍스트 추출기 로드 (없으면 자체 처리 시도)
+# [수정] 폴더 구조에 맞게 경로 수정 (service 추가)
 try:
-    from app.common.file_input import FileProcessor
-except ImportError:
-    # 비상용 더미 클래스 (텍스트 직접 수신 시에는 사용 안 되므로 괜찮음)
-    class FileProcessor:
-        @staticmethod
-        def load_file_content(path): return ""
-
-# [2] 캐릭터/세계관 담당자 연결
-try:
+    # app/service/characters 폴더 내의 함수
     from app.service.characters import summarize_character_info
 except ImportError:
-    def summarize_character_info(text):
-        return {"status": "error", "message": "Character Module Import Failed"}
+    # 만약 위 경로도 안 된다면 아래 경로 시도
+    try:
+        from service.characters import summarize_character_info
+    except ImportError:
+        def summarize_character_info(text):
+            return {"status": "error", "message": "Character Module을 찾을 수 없습니다. 경로를 확인하세요."}
 
 try:
-    # 우리가 방금 수정한 extracter.py의 함수
-    from app.story_keeper_agent.load_state.extracter import update_world_setting
+    # [수정] story_keeper_agent 앞에 service. 를 추가해야 함
+    from app.service.story_keeper_agent.load_state.extracter import update_world_setting
 except ImportError:
-    def update_world_setting(text):
-        return {"status": "error", "message": "World Module Import Failed"}
+    try:
+        from service.story_keeper_agent.load_state.extracter import update_world_setting
+    except ImportError:
+        def update_world_setting(text):
+            return {"status": "error", "message": "World Module을 찾을 수 없습니다. 경로를 확인하세요."}
 
 
 class StoryIngestionService:
