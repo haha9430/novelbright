@@ -13,18 +13,14 @@ import xml.etree.ElementTree as ET
 from components.common import get_current_project
 from components.sidebar import render_sidebar
 
-# [핵심] 파일 파싱 함수 가져오기
-try:
-    from api import save_material_api, delete_material_api, parse_file_content, BASE_URL
-except ImportError:
-    # 로컬 테스트용 폴백 (api.py가 같은 폴더에 없을 경우)
-    import os
 
-    BASE_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+import os
+
+BASE_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
 
-    def parse_file_content(file):
-        return "파일 파싱 함수 로드 실패"
+def parse_file_content(file):
+    return "파일 파싱 함수 로드 실패"
 
 
 def render_materials():
@@ -150,18 +146,14 @@ def render_materials():
 
 
 # =================================================
-# [Helper] 파일 파싱 함수 정의
+# [1] HWPX (신버전, Zip+XML) 텍스트 추출 함수
 # =================================================
 def get_hwpx_text(file_obj):
-    """
-    HWPX 파일(Zip+XML 구조)에서 텍스트를 추출하는 함수
-    """
     text = ""
     try:
         file_obj.seek(0)
         with zipfile.ZipFile(file_obj) as zf:
-            # HWPX는 내용이 'Contents/section0.xml', 'section1.xml' ... 에 들어있음
-            # 파일 목록에서 섹션 파일만 찾아서 순서대로 정렬
+            # HWPX는 내용이 'Contents/sectionX.xml'에 들어있음
             section_files = sorted(
                 [f for f in zf.namelist() if f.startswith('Contents/section') and f.endswith('.xml')]
             )
@@ -169,32 +161,67 @@ def get_hwpx_text(file_obj):
             if not section_files:
                 return None
 
-            # 각 섹션 XML을 파싱하여 텍스트 추출
             for filename in section_files:
                 xml_data = zf.read(filename)
                 root = ET.fromstring(xml_data)
 
-                # HWPX의 텍스트 태그는 <hp:t> 입니다.
-                # 네임스페이스 처리가 번거로우므로, 모든 태그를 순회하며 't' 태그만 찾습니다.
-                # (http://www.hancom.co.kr/hwpml/2011/paragraph 네임스페이스)
+                # <hp:t> 태그의 텍스트만 추출
                 for neighbor in root.iter():
-                    if neighbor.tag.endswith('}t'): # <hp:t> 태그 확인
+                    if neighbor.tag.endswith('}t'):
                         if neighbor.text:
                             text += neighbor.text + "\n"
-
         return text
-    except Exception as e:
-        print(f"HWPX Parsing Error: {e}")
+    except Exception:
         return None
 
+# =================================================
+# [2] HWP (구버전, OLE) 텍스트 추출 함수
+# =================================================
+def get_hwp_text(file_obj):
+    try:
+        file_obj.seek(0)
+        try:
+            f = olefile.OleFileIO(file_obj)
+        except Exception:
+            # OLE 포맷이 아님 -> HWPX일 가능성 높음
+            return None
 
+        dirs = f.listdir()
+
+        # HWP 5.0 구조 확인
+        if ["FileHeader"] not in dirs or ["BodyText"] not in dirs:
+            return None
+
+        sections = [d[1] for d in dirs if d[0] == "BodyText"]
+        text = ""
+
+        for section in sections:
+            try:
+                bodytext = f.openstream("BodyText/" + section).read()
+                # 압축 해제 (zlib)
+                unpacked_data = zlib.decompress(bodytext, -15)
+                decoded_text = unpacked_data.decode('utf-16-le')
+                # 정제
+                text += decoded_text.replace("\r", "\n").replace("\x00", "")
+            except Exception:
+                continue
+
+        return text
+    except Exception:
+        return None
+
+# =================================================
+# [3] 메인 파일 파싱 함수 (스마트 분기 처리)
+# =================================================
 def parse_file_content(uploaded_file):
-    # 확장자 소문자로 변환
+    """
+    업로드된 파일 객체를 받아 텍스트를 추출하여 반환
+    """
     file_ext = uploaded_file.name.split('.')[-1].lower()
     text = ""
 
     try:
-        uploaded_file.seek(0) # 포인터 초기화 필수
+        uploaded_file.seek(0) # 파일 포인터 초기화
 
         # 1. TXT / MD
         if file_ext in ['txt', 'md']:
@@ -211,28 +238,35 @@ def parse_file_content(uploaded_file):
                     text += page.get_text()
             if text: text = re.sub(r'(?<![\.\?\!])\n', ' ', text)
 
-        # 3. Word (DOCX)
+        # 3. DOCX
         elif file_ext == 'docx':
             doc = Document(uploaded_file)
             for para in doc.paragraphs:
                 text += para.text + "\n"
 
-        # 4. HWP (구버전)
-        elif file_ext == 'hwp':
-            text = get_hwp_text(uploaded_file)
-
-        # 5. [NEW] HWPX (신버전) 추가
-        elif file_ext == 'hwpx':
-            text = get_hwpx_text(uploaded_file)
+        # 4. HWP 및 HWPX (확장자가 섞여있을 경우 대비)
+        elif file_ext in ['hwp', 'hwpx']:
+            # 우선 확장자에 맞는거 시도
+            if file_ext == 'hwp':
+                text = get_hwp_text(uploaded_file)
+                # 실패했다면 HWPX일 수 있으므로 재시도
+                if text is None:
+                    text = get_hwpx_text(uploaded_file)
+            else:
+                text = get_hwpx_text(uploaded_file)
+                # 실패했다면 HWP일 수 있으므로 재시도
+                if text is None:
+                    text = get_hwp_text(uploaded_file)
 
         else:
             return None
 
+        # [핵심 수정] NoneType 에러 방지 (text가 None이면 바로 리턴)
         if text is None:
             return None
 
         return text.strip()
 
     except Exception as e:
-        st.error(f"파일 처리 중 오류 발생 ({file_ext}): {e}")
+        st.error(f"파일 처리 중 오류 발생: {e}")
         return None
