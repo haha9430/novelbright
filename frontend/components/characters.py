@@ -4,6 +4,21 @@ import sys
 import os
 from pathlib import Path
 
+import json
+import os
+
+
+def load_characters_from_file():
+    # 백엔드와 똑같은 절대 경로를 바라봐야 합니다!
+    file_path = "/app/data/characters.json"
+
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            # 딕셔너리 형태를 리스트로 변환하여 반환
+            return list(data.values())
+    return []
+
 
 # [해결 핵심] 프로젝트 루트를 파이썬 경로에 추가하여 루트에 있는 api.py를 찾게 만듭니다.
 root_path = str(Path(__file__).resolve().parents[2])
@@ -38,6 +53,7 @@ def render_characters(proj):
     """
     등장인물 관리 탭 UI (팀원 기능 통합 + 카드형 UI 유지 + 아이콘 제거)
     """
+    proj["characters"] = load_characters_from_file()
     # 1. 상단 액션 버튼 영역
     col_add, col_file = st.columns([1, 2], gap="small")
 
