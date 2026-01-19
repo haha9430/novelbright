@@ -9,6 +9,7 @@ from docx import Document
 import fitz  # PyMuPDF
 import re
 import zipfile
+import json
 import xml.etree.ElementTree as ET
 from components.common import get_current_project
 from components.sidebar import render_sidebar
