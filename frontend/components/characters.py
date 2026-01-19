@@ -58,25 +58,34 @@ except ImportError as error:
 
 def render_characters(proj):
     """
-    등장인물 관리 탭 UI (통합 입력 방식 + 오류 해결본)
+    등장인물 관리 탭 UI (통합 입력 방식 + 데이터 로드 강화 버전)
     """
-    # 🔴 데이터 로드 (함수 내부에서 수행하여 proj 변수 인식 보장)
-    with st.status("데이터를 불러오는 중...", expanded=False) as status:
-        proj["characters"] = load_characters_from_file()
+    # 🔴 [개선] 데이터 로드 로직 강화 (리스트/딕셔너리 대응)
+    with st.status("데이터 동기화 중...", expanded=False) as status:
+        raw_data = load_characters_from_file()
+
+        if isinstance(raw_data, list):
+            proj["characters"] = raw_data
+        elif isinstance(raw_data, dict):
+            # {'characters': [...]} 형태이거나 캐릭터 이름이 키인 경우 대응
+            proj["characters"] = raw_data.get("characters", list(raw_data.values()))
+        else:
+            proj["characters"] = []
+
+        status.update(label=f"총 {len(proj['characters'])}명의 데이터를 불러왔습니다.", state="complete")
 
     # 1. 상단 액션 버튼 영역
     col_add, col_file = st.columns([1, 1], gap="small")
 
     with col_add:
-        # 🟢 [개선] 통합 입력 방식: 이름만 쓰고 나머지는 한 칸에 다 적기
         with st.popover("➕ 인물 직접 추가", use_container_width=True):
             st.markdown("### 새로운 인물 추가")
             new_name = st.text_input("이름", placeholder="예: 이도훈")
 
-            # 현빈님이 원하신 대로 나이/성별 구분 없이 주루루룩 입력받는 칸
+            # 현빈님이 원하신 통합 입력창
             new_description = st.text_area(
                 "인물 상세 설정",
-                placeholder="나이, 성별, 직업, 특징 등을 자유롭게 나열해서 적어주세요.",
+                placeholder="나이, 성별, 특징 등을 자유롭게 나열해서 적어주세요.",
                 height=200
             )
 
@@ -84,11 +93,10 @@ def render_characters(proj):
                 if not new_name.strip():
                     st.error("이름은 필수입니다!")
                 else:
-                    # 백엔드 구조에 맞춰 데이터 통합 저장
                     new_data = {
                         "name": new_name,
-                        "job_status": new_description,  # 모든 정보를 여기에 주루루룩 넣음
-                        "age_gender": "integrated",  # 구분하지 않으므로 고정값
+                        "job_status": new_description,
+                        "age_gender": "integrated",
                         "core_traits": [],
                         "personality": {"pros": "none", "cons": "none"},
                         "relationships": [],
@@ -125,7 +133,7 @@ def render_characters(proj):
                         if content and not str(content).startswith("[Error]"):
                             success, msg = ingest_file_to_backend(content, "character")
                             if success:
-                                st.success("분석 완료!")
+                                st.success("분석 및 저장 완료!")
                                 st.rerun()
                             else:
                                 st.error(f"분석 실패: {msg}")
@@ -134,9 +142,9 @@ def render_characters(proj):
 
     st.divider()
 
-    # 2. 등장인물 리스트 렌더링 (🔴 들여쓰기 수정하여 Unresolved reference 'proj' 해결)
-    if "characters" not in proj or not proj["characters"]:
-        st.info("등록된 등장인물이 없습니다.")
+    # 2. 등장인물 리스트 렌더링
+    if not proj.get("characters"):
+        st.info("등록된 등장인물이 없습니다. 파일을 추가하거나 직접 등록해 보세요.")
         return
 
     st.caption(f"총 {len(proj['characters'])}명의 등장인물")
@@ -145,40 +153,41 @@ def render_characters(proj):
     cols = st.columns(2)
 
     for idx, char in enumerate(proj["characters"]):
-        char_id = char.get("name", f"idx_{idx}")
+        # 개별 캐릭터 데이터에서 이름 추출
+        char_name = char.get("name") if isinstance(char, dict) else f"인물 {idx + 1}"
+        char_id = f"char_{idx}_{char_name}"
 
         with cols[idx % 2]:
             with st.container(border=True):
                 c_img, c_info = st.columns([1, 2])
 
                 with c_img:
-                    # 이미지 없을 때 No Img 표시
                     st.markdown(
                         "<div style='background-color:#f0f2f6;height:80px;display:flex;align-items:center;justify-content:center;border-radius:5px;color:#999;font-size:12px;font-weight:bold;'>No Img</div>",
                         unsafe_allow_html=True)
 
                 with c_info:
-                    # 이름과 통합 정보 표시
-                    char_name = char.get("name", "이름 없음")
                     st.subheader(char_name)
-                    # job_status에 담긴 통합 정보를 요약해서 보여줌
-                    st.caption(char.get('job_status', '정보 없음')[:50] + "...")
+                    # job_status 내용을 요약해서 보여줌
+                    desc = char.get('job_status', '정보 없음') if isinstance(char, dict) else "데이터 형식 오류"
+                    st.caption(desc[:45] + "..." if len(desc) > 45 else desc)
 
                     with st.expander("📝 상세 설정"):
-                        # 수정 시에도 한 칸에서 주루루룩 편집 가능
                         edited_info = st.text_area(
                             "인물 설정 내용",
-                            value=char.get("job_status", ""),
+                            value=desc,
                             height=150,
-                            key=f"edit_desc_{char_id}_{idx}"
+                            key=f"edit_area_{char_id}"
                         )
 
-                        if st.button("💾 저장", key=f"save_btn_{idx}", use_container_width=True, type="primary"):
-                            char["job_status"] = edited_info
-                            save_character_api(char_name, char)
-                            st.toast("저장되었습니다!", icon="✅")
-                            st.rerun()
+                        if st.button("💾 저장", key=f"save_btn_{char_id}", use_container_width=True, type="primary"):
+                            if isinstance(char, dict):
+                                char["job_status"] = edited_info
+                                save_character_api(char_name, char)
+                                st.toast(f"{char_name} 저장 완료!", icon="✅")
+                                st.rerun()
 
-                        if st.button("🗑️ 삭제", key=f"del_btn_{idx}", use_container_width=True):
+                        if st.button("🗑️ 삭제", key=f"del_btn_{char_id}", use_container_width=True):
                             proj["characters"].pop(idx)
+                            # 삭제 후 파일 업데이트 로직 필요 시 추가
                             st.rerun()

@@ -108,7 +108,6 @@ class PlotManager:
         if not text:
             return []
 
-        # LLM 없으면 문장 앞부분으로 대체
         if self.llm is None:
             return _pick_summary(text)
 
@@ -141,11 +140,6 @@ class PlotManager:
 
         return _pick_summary(text)
 
-    # ------------------------------
-    # ✅ 세계관/플롯 설정 저장 (파일 업로드/직접입력 공용)
-    # - 원문은 plot.json에 누적 저장
-    # - 요약(summary)은 plot.json.summary(list[str])로 저장
-    # ------------------------------
     def update_global_settings(self, text: str) -> Dict[str, Any]:
         incoming = (text or "").strip()
         if not incoming:
@@ -155,7 +149,6 @@ class PlotManager:
         if not isinstance(plot, dict):
             plot = {}
 
-        # 기존 값 유지
         genre = plot.get("genre", [])
         characters = plot.get("characters", [])
 
@@ -164,17 +157,14 @@ class PlotManager:
         if not isinstance(characters, list):
             characters = []
 
-        # ✅ 원문 누적
         prev_raw = _safe_str(plot.get("world_raw", "")).strip()
         if prev_raw:
             merged_raw = prev_raw + "\n\n" + incoming
         else:
             merged_raw = incoming
 
-        # ✅ 요약 갱신
         summary_lines = self._summarize_world_to_lines(merged_raw)
 
-        # ✅ plot.json 구조 저장
         plot["world_raw"] = merged_raw
         plot["summary"] = summary_lines
         plot["genre"] = genre
@@ -183,9 +173,6 @@ class PlotManager:
         _write_json(self.global_setting_file, plot)
         return {"status": "success", "data": plot}
 
-    # ------------------------------
-    # 요약 + 히스토리 저장 (기존 유지)
-    # ------------------------------
     def summarize_and_save(self, episode_no: int, full_text: str) -> Dict[str, Any]:
         if not full_text.strip():
             return {"status": "error", "message": "empty text"}
@@ -236,3 +223,21 @@ class PlotManager:
 
     def extract_facts(self, episode_no, full_text, story_state):
         return {"episode_no": episode_no, "events": [], "characters": [], "state_changes": {}}
+
+
+# -------------------------------------------------------------------
+# ✅ IngestionService에서 찾는 함수 이름으로 "연결"해주는 래퍼
+#    (기존 import: from ...extracter import update_world_setting 유지 가능)
+# -------------------------------------------------------------------
+_PLOT_MANAGER_SINGLETON: Optional[PlotManager] = None
+
+
+def _get_plot_manager() -> PlotManager:
+    global _PLOT_MANAGER_SINGLETON
+    if _PLOT_MANAGER_SINGLETON is None:
+        _PLOT_MANAGER_SINGLETON = PlotManager()
+    return _PLOT_MANAGER_SINGLETON
+
+
+def update_world_setting(text: str) -> Dict[str, Any]:
+    return _get_plot_manager().update_global_settings(text)
