@@ -307,9 +307,9 @@ def analyze_clio_api(current_doc, content_source):
 # =========================================================
 # 7) [NEW] story keeper 파일 업로드 통합 처리 (Ingest)
 # =========================================================
-def ingest_file_to_backend(text: str, upload_type: str) -> Tuple[bool, str]:
+def ingest_file_to_backend(text: str, upload_type: str) -> tuple[bool, str]:
     """
-    [수정] 단순히 True/False만 주는 게 아니라, 상세 메시지도 함께 리턴합니다.
+    [수정] 이제 True/False 하나만 보내지 않고, (성공여부, 메시지) 튜플을 보냅니다.
     """
     if not text.strip():
         return False, "추출된 텍스트가 없습니다."
@@ -318,18 +318,19 @@ def ingest_file_to_backend(text: str, upload_type: str) -> Tuple[bool, str]:
     payload = {"text": text, "type": upload_type}
 
     try:
-        # 타임아웃을 30초로 설정하여 AI 분석 시간을 확보합니다.
-        response = requests.post(url, json=payload, timeout=30)
+        # 타임아웃을 넉넉히 주어 AI 분석 시간을 확보합니다.
+        response = requests.post(url, json=payload, timeout=60)
 
         if response.status_code == 200:
             result = response.json()
             if result.get("status") == "success":
+                # 성공 시 (True, "성공 메시지") 반환
                 return True, result.get("message", "성공적으로 처리되었습니다.")
             else:
-                # 백엔드의 실제 에러 메시지(예: 모듈 로드 실패)를 가져옵니다.
+                # 실패 시 (False, "실패 사유") 반환
                 return False, result.get("message", "백엔드 분석 실패")
         else:
             return False, f"서버 응답 오류 ({response.status_code}): {response.text}"
 
     except Exception as e:
-        return False, f"연결 오류: {str(e)}"
+        return False, f"연결 오류 발생: {str(e)}"
