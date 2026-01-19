@@ -4,7 +4,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 try:
     from dotenv import load_dotenv
@@ -46,6 +46,14 @@ def _pick_summary(text: str) -> List[str]:
     return sents[:8]
 
 
+def _safe_str(x: Any) -> str:
+    if isinstance(x, str):
+        return x
+    if x is None:
+        return ""
+    return str(x)
+
+
 class PlotManager:
     def __init__(self):
         self._fix_ssl_cert_env()
@@ -67,6 +75,7 @@ class PlotManager:
         self.global_setting_file = self.data_dir / "plot.json"
 
         print(f"📂 story_history path = {self.history_file}")
+        print(f"📂 plot.json path     = {self.global_setting_file}")
 
     def _fix_ssl_cert_env(self):
         try:
@@ -94,8 +103,88 @@ class PlotManager:
         except Exception:
             return {}
 
+    def _summarize_world_to_lines(self, world_text: str) -> List[str]:
+        text = (world_text or "").strip()
+        if not text:
+            return []
+
+        # LLM 없으면 문장 앞부분으로 대체
+        if self.llm is None:
+            return _pick_summary(text)
+
+        prompt = f"""
+너는 웹소설 편집자다.
+아래 '세계관 설정' 원문을 읽고, 핵심 규칙/배경/제약/톤을 6~10줄로 요약해라.
+반드시 JSON으로만 반환해라.
+
+형식:
+{{
+  "summary": ["...", "..."]
+}}
+
+세계관 원문:
+{text[:6000]}
+"""
+        try:
+            res = self.llm.invoke(prompt)
+            data = self._safe_json(getattr(res, "content", "") or "")
+            summary = data.get("summary")
+            if isinstance(summary, list):
+                out = []
+                for s in summary:
+                    s = _safe_str(s).strip()
+                    if s:
+                        out.append(s)
+                return out[:10]
+        except Exception:
+            pass
+
+        return _pick_summary(text)
+
     # ------------------------------
-    # 요약 + 히스토리 저장 (핵심)
+    # ✅ 세계관/플롯 설정 저장 (파일 업로드/직접입력 공용)
+    # - 원문은 plot.json에 누적 저장
+    # - 요약(summary)은 plot.json.summary(list[str])로 저장
+    # ------------------------------
+    def update_global_settings(self, text: str) -> Dict[str, Any]:
+        incoming = (text or "").strip()
+        if not incoming:
+            return {"status": "error", "message": "empty text"}
+
+        plot = _read_json(self.global_setting_file, default={})
+        if not isinstance(plot, dict):
+            plot = {}
+
+        # 기존 값 유지
+        genre = plot.get("genre", [])
+        characters = plot.get("characters", [])
+
+        if not isinstance(genre, list):
+            genre = []
+        if not isinstance(characters, list):
+            characters = []
+
+        # ✅ 원문 누적
+        prev_raw = _safe_str(plot.get("world_raw", "")).strip()
+        if prev_raw:
+            merged_raw = prev_raw + "\n\n" + incoming
+        else:
+            merged_raw = incoming
+
+        # ✅ 요약 갱신
+        summary_lines = self._summarize_world_to_lines(merged_raw)
+
+        # ✅ plot.json 구조 저장
+        plot["world_raw"] = merged_raw
+        plot["summary"] = summary_lines
+        plot["genre"] = genre
+        plot["characters"] = characters
+
+        _write_json(self.global_setting_file, plot)
+        return {"status": "success", "data": plot}
+
+    # ------------------------------
+    # 요약 + 히스토리 저장 (기존 유지)
     # ------------------------------
     def summarize_and_save(self, episode_no: int, full_text: str) -> Dict[str, Any]:
         if not full_text.strip():
@@ -124,7 +213,7 @@ class PlotManager:
 """
             try:
                 res = self.llm.invoke(prompt)
-                result = self._safe_json(res.content)
+                result = self._safe_json(getattr(res, "content", "") or "")
             except Exception:
                 result = {}
 
@@ -145,6 +234,5 @@ class PlotManager:
         _write_json(self.history_file, history)
         return {"status": "success", "data": history[str(episode_no)]}
 
-    # 기존 로직 유지
     def extract_facts(self, episode_no, full_text, story_state):
         return {"episode_no": episode_no, "events": [], "characters": [], "state_changes": {}}

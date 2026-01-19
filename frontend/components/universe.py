@@ -60,7 +60,10 @@ def _render_worldview_tab(proj):
                     if content and not content.startswith("[Error]"):
                         success = ingest_file_to_backend(content, "worldview")
                         if success:
+                            # ✅ 업로드한 원문을 아래 입력칸에 그대로 누적
+                            proj["worldview"] = (proj.get("worldview", "").rstrip() + "\n\n" + content.strip()).strip()
                             st.success("세계관 자료가 성공적으로 추가되었습니다!")
+                            st.rerun()
                         else:
                             st.error("서버 전송 실패")
                     else:

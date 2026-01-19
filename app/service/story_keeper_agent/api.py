@@ -8,7 +8,8 @@ from pathlib import Path
 sys.path.insert(0, os.getcwd())
 
 from fastapi import APIRouter, HTTPException, Body, Form, Query
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel
+from typing import Any, Dict
 
 from app.service.story_keeper_agent.ingest_episode import (
     ingest_episode,
@@ -138,6 +139,38 @@ def get_story_history():
 )
 def world_setting(text: str = Body(..., media_type="text/plain")):
     return manager.update_global_settings(text)
+
+
+# ✅ 추가: 파일 업로드(텍스트) ingest 엔드포인트
+class IngestRequest(BaseModel):
+    text: str
+    type: str  # "world" / "worldview" / etc
+
+
+@router.post(
+    "/ingest",
+    summary="Ingest Text",
+    description="프론트에서 변환된 텍스트를 받아 type에 따라 저장/요약 처리",
+)
+def ingest(payload: IngestRequest):
+    try:
+        text = (payload.text or "").strip()
+        upload_type = (payload.type or "").strip().lower()
+
+        if not text:
+            return {"status": "error", "message": "empty text"}
+
+        # 세계관/설정 파일 업로드 케이스
+        if upload_type in ("world", "worldview"):
+            # 여기서 요약+plot.json 저장이 update_global_settings 내부에서 이뤄져야 함
+            # (너가 extracter에서 만든 '요약해서 plot.json 저장' 로직이 여기로 연결되는 구조)
+            res = manager.update_global_settings(text)
+            return {"status": "success", "message": "world ingested", "data": res}
+
+        return {"status": "error", "message": f"unsupported type: {upload_type}"}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post(
