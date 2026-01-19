@@ -1,3 +1,4 @@
+# app/service/story_keeper_agent/load_state/load_state.py
 import json
 import os
 from typing import Any, Dict, List
@@ -44,10 +45,12 @@ def load_state(episode_no: int) -> Dict[str, Any]:
     if not isinstance(episode_no, int) or episode_no < 1:
         raise ValueError("episode_no는 1 이상의 정수여야 합니다.")
 
+    # 도커/서버 기준 데이터 폴더
     pvc_dir = "/app/app/data"
 
     plot_path = os.path.join(pvc_dir, "plot.json")
-    history_path = os.path.join(pvc_dir, "../../../data/story_history.json")
+    # ✅ FIX: 같은 폴더의 story_history.json을 읽어야 함
+    history_path = os.path.join(pvc_dir, "story_history.json")
 
     plot = _read_json(plot_path, default={})
     history = _read_json(history_path, default={})

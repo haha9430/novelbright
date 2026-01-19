@@ -1,50 +1,18 @@
+# frontend/components/plot.py
 import json
 from pathlib import Path
+import datetime
 import streamlit as st
 
 from components.common import get_current_project
 from components.sidebar import render_sidebar
 
-from api import save_world_setting_api, ingest_file_to_backend
+from api import save_world_setting_api, ingest_file_to_backend, get_story_history_api
 from app.common.file_input import FileProcessor
 
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[2]
-
-
-def _candidate_history_paths() -> list[Path]:
-    root = _project_root()
-    cwd = Path.cwd()
-
-    # 기존 app/data도 혹시 몰라 유지
-    p3 = root / "app" / "data" / "story_history.json"
-    p4 = cwd / "app" / "data" / "story_history.json"
-
-    return [p3, p4]
-
-
-def _pick_history_path() -> Path | None:
-    for p in _candidate_history_paths():
-        if p.exists():
-            return p
-    return _candidate_history_paths()[0]  # 없으면 1순위로 생성 유도
-
-
-def _read_story_history() -> tuple[dict, Path | None]:
-    p = _pick_history_path()
-    if p is None:
-        return {}, None
-    try:
-        if not p.exists():
-            return {}, p
-        with p.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
-            return {}, p
-        return data, p
-    except Exception:
-        return {}, p
 
 
 def _write_story_history(path: Path, history: dict) -> None:
@@ -77,6 +45,14 @@ def _ensure_state():
     if "world_draft" not in st.session_state:
         st.session_state.world_draft = ""
 
+    # ✅ 히스토리 캐시
+    if "story_history_cache" not in st.session_state:
+        st.session_state.story_history_cache = {}
+    if "story_history_source" not in st.session_state:
+        st.session_state.story_history_source = ""
+    if "story_history_last_fetch" not in st.session_state:
+        st.session_state.story_history_last_fetch = ""
+
 
 def _save_world_and_plot_json(draft: str) -> tuple[bool, str]:
     draft = (draft or "").strip()
@@ -89,6 +65,25 @@ def _save_world_and_plot_json(draft: str) -> tuple[bool, str]:
         return False, "plot.json 저장 실패"
     except Exception as e:
         return False, f"plot.json 저장 실패: {e}"
+
+
+def _fetch_and_cache_history(show_toast: bool = True) -> bool:
+    """
+    백엔드에서 히스토리 가져와서 세션에 저장
+    """
+    history, err = get_story_history_api()
+    if err:
+        if show_toast:
+            st.toast(f"불러오기 실패: {err}", icon="⚠️")
+        return False
+
+    st.session_state.story_history_cache = history if isinstance(history, dict) else {}
+    st.session_state.story_history_source = "backend:/story/history"
+    st.session_state.story_history_last_fetch = datetime.datetime.now().strftime("%H:%M:%S")
+
+    if show_toast:
+        st.toast("히스토리 불러오기 완료", icon="✅")
+    return True
 
 
 def render_plot():
@@ -126,7 +121,7 @@ def render_plot():
         uploaded_file = st.file_uploader(
             "세계관 설정 파일(PDF, DOCX, TXT)을 올리면 AI가 분석하여 자동 저장합니다.",
             type=["pdf", "docx", "txt"],
-            key="world_file_uploader"
+            key="world_file_uploader",
         )
         if uploaded_file:
             if st.button("🚀 AI 분석 및 저장 시작", key="world_ingest_btn", use_container_width=True):
@@ -174,50 +169,58 @@ def render_plot():
             if saved:
                 st.markdown(f"<div class='view-box'>{saved}</div>", unsafe_allow_html=True)
             else:
-                st.markdown("<div class='view-box' style='color: rgba(0,0,0,0.45)'>설명을 입력하거나 파일을 업로드하세요.</div>", unsafe_allow_html=True)
+                st.markdown(
+                    "<div class='view-box' style='color: rgba(0,0,0,0.45)'>설명을 입력하거나 파일을 업로드하세요.</div>",
+                    unsafe_allow_html=True,
+                )
         else:
             st.session_state.world_draft = st.text_area(
                 "세계관 내용",
                 value=st.session_state.world_draft,
                 height=220,
-                label_visibility="collapsed"
+                label_visibility="collapsed",
             )
 
+    # -------------------------
+    # ✅ 플롯 섹션 + 불러오기 버튼
+    # -------------------------
     with st.container(border=False):
         c1, c2 = st.columns([8.5, 1.5], vertical_alignment="bottom")
         with c1:
             st.markdown("<h2 class='section-title'>📌 플롯</h2>", unsafe_allow_html=True)
         with c2:
             if st.button("📥 히스토리 불러오기", key="reload_history", use_container_width=True):
-                st.toast("불러오기", icon="✅")
+                _fetch_and_cache_history(show_toast=True)
                 st.rerun()
 
-    history, hist_path = _read_story_history()
+    # ✅ 처음 들어왔는데 캐시가 비었으면 1회 자동 로드
+    if not st.session_state.story_history_cache:
+        _fetch_and_cache_history(show_toast=False)
+
+    history = st.session_state.story_history_cache or {}
+    source_info = st.session_state.story_history_source or "backend:/story/history"
+    last_fetch = st.session_state.story_history_last_fetch or ""
+
     if not history:
         st.info("아직 히스토리가 없습니다.")
-        if hist_path:
-            st.caption(f"보고 있는 경로: {hist_path}")
+        st.caption(f"소스: {source_info} / 마지막 불러오기: {last_fetch}")
         return
 
     items = _normalize_items(history)
-    st.caption(f"보고 있는 경로: {hist_path}")
+    st.caption(f"소스: {source_info} / 마지막 불러오기: {last_fetch}")
 
-    for ep_no, item, raw_keys in items:
+    for ep_no, item, _raw_keys in items:
         title = str(item.get("title", "")).strip()
         summary = str(item.get("summary", "")).strip()
+
         with st.expander(f"#{ep_no}화", expanded=False):
             top = st.columns([8.5, 1.5], vertical_alignment="center")
             with top[0]:
                 title_html = f'<div class="episode-title">– {title}</div>' if title else ""
                 st.markdown(
                     f"""<div class="episode-card"><div class="episode-header">{ep_no}화</div>{title_html}<div class="episode-summary">{summary}</div></div>""",
-                    unsafe_allow_html=True
+                    unsafe_allow_html=True,
                 )
             with top[1]:
-                if st.button("🗑 삭제", key=f"del_ep_{ep_no}", use_container_width=True):
-                    if hist_path:
-                        for k in raw_keys:
-                            history.pop(k, None)
-                        _write_story_history(hist_path, history)
-                        st.toast(f"{ep_no}화 삭제 완료", icon="✅")
-                        st.rerun()
+                st.button("🗑 삭제", key=f"del_ep_{ep_no}", use_container_width=True, disabled=True)
+                st.caption("백엔드 삭제 API 필요")

@@ -10,7 +10,7 @@ import os
 
 def load_characters_from_file():
     # 백엔드와 똑같은 절대 경로를 바라봐야 합니다!
-    file_path = "/app/data/characters.json"
+    file_path = "app/data/characters.json"
 
     if os.path.exists(file_path):
         with open(file_path, "r", encoding="utf-8") as f:
