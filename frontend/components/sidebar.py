@@ -18,15 +18,15 @@ def render_sidebar(current_proj):
             st.markdown(f"### {current_proj['title']}")
 
             # 통합 검색
-            if st.button("🔍 검색하기", use_container_width=True):
+            if st.button("검색하기", use_container_width=True):
                 search_modal(current_proj)
 
             st.write("")  # 여백
 
             # 메뉴 네비게이션
             menus = [
-                ("universe", "🌍 설정 (세계관/인물)"),
-                ("materials", "🗂️ 자료실")
+                ("universe", "설정 (세계관/인물)"),
+                ("materials", "자료실")
             ]
 
             for page_key, label in menus:
