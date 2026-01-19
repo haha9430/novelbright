@@ -34,8 +34,6 @@ except ImportError:
             return "Dummy Content"
 
 
-# ---------- world helpers ----------
-
 def _ensure_world_state():
     if "world_edit_mode" not in st.session_state:
         st.session_state.world_edit_mode = False
@@ -44,17 +42,14 @@ def _ensure_world_state():
     if "world_delete_armed" not in st.session_state:
         st.session_state.world_delete_armed = False
 
-    # 요약/원문 캐시 (불러오기 전엔 빈 값)
     if "world_summary_view" not in st.session_state:
         st.session_state.world_summary_view = ""
     if "world_raw_view" not in st.session_state:
         st.session_state.world_raw_view = ""
 
-    # 화면 모드
     if "world_view_mode" not in st.session_state:
-        st.session_state.world_view_mode = "summary"  # summary | raw
+        st.session_state.world_view_mode = "summary"
 
-    # ✅ 수동 로드 여부
     if "world_loaded" not in st.session_state:
         st.session_state.world_loaded = False
 
@@ -84,7 +79,6 @@ def _pull_world_from_backend(show_toast: bool = False) -> bool:
     st.session_state.world_raw_view = raw
     st.session_state.world_summary_view = summary_text
 
-    # 요약이 있으면 요약 모드, 없으면 원문 모드
     if summary_text:
         st.session_state.world_view_mode = "summary"
     elif raw:
@@ -116,8 +110,6 @@ def _get_current_world_text() -> str:
     return (st.session_state.world_summary_view or "").strip()
 
 
-# ---------- main render ----------
-
 def render_universe():
     proj = get_current_project()
     if not proj:
@@ -148,14 +140,18 @@ def _render_worldview_tab():
     st.markdown(
         """
         <style>
-        .world-desc-title { margin-top: 2px; color: #111; }
         .view-box {
-            white-space: pre-wrap; line-height: 1.75;
-            padding: 14px; border-radius: 12px;
+            width: 100%;
+            box-sizing: border-box;
+            white-space: pre-wrap;
+            line-height: 1.75;
+            padding: 16px;
+            border-radius: 12px;
             border: 1px solid rgba(0,0,0,0.08);
             background: rgba(0,0,0,0.02);
-            min-height: 160px;
+            min-height: 180px;
         }
+        .muted { color: rgba(0,0,0,0.45); }
         </style>
         """,
         unsafe_allow_html=True,
@@ -178,9 +174,7 @@ def _render_worldview_tab():
                     if content and not content.startswith("[Error]"):
                         success, msg = ingest_file_to_backend(content, "world")
                         if success:
-                            # ✅ 업로드 성공 시: 자동으로 불러오기까지는 해줌 (원하면 이 줄도 빼면 됨)
-                            
-                            st.session_state.world_delete_armed = False
+                            st.toast("저장 완료. 아래에서 '불러오기'를 눌러 확인하세요.", icon="✅")
                             st.rerun()
                         else:
                             st.error(msg or "서버 전송 실패")
@@ -196,134 +190,126 @@ def _render_worldview_tab():
                             pass
 
     st.divider()
-
     st.subheader("세계관 설명")
-    with st.container(border=True):
-        left, right = st.columns([8.0, 2.0], vertical_alignment="bottom")
-        with left:
-            st.markdown("<h3 class='world-desc-title'>🧾 저장된 세계관</h3>", unsafe_allow_html=True)
 
-        with right:
-            # ✅ 버튼 눌렀을 때만 불러오기
+    # ✅ 상단은 버튼/액션만
+    top = st.container()
+    with top:
+        c1, c2 = st.columns([7.5, 2.5], vertical_alignment="bottom")
+        with c1:
+            st.markdown("#### 🧾 저장된 세계관")
+        with c2:
             if st.button("📥 불러오기", use_container_width=True, key="world_load_btn"):
                 _pull_world_from_backend(show_toast=True)
                 st.session_state.world_delete_armed = False
                 st.session_state.world_edit_mode = False
                 st.rerun()
 
-        # ---- 불러오기 전 화면 ----
-        if not st.session_state.world_loaded:
-            st.markdown(
-                "<div class='view-box' style='color: rgba(0,0,0,0.45)'>아직 불러온 세계관이 없습니다. 오른쪽 상단의 '불러오기'를 눌러주세요.</div>",
-                unsafe_allow_html=True,
-            )
-            return
+    # ✅ 내용 박스는 컬럼 밖에서 전체 폭 사용
+    if not st.session_state.world_loaded:
+        st.markdown(
+            "<div class='view-box muted'>아직 불러온 세계관이 없습니다. 위의 '불러오기'를 눌러주세요.</div>",
+            unsafe_allow_html=True,
+        )
+        return
 
-        # ---- 불러온 후 화면 ----
-        saved_summary = (st.session_state.world_summary_view or "").strip()
-        saved_raw = (st.session_state.world_raw_view or "").strip()
+    saved_summary = (st.session_state.world_summary_view or "").strip()
+    saved_raw = (st.session_state.world_raw_view or "").strip()
 
-        # 보기 모드 토글(요약/원문 둘 다 있을 때만)
-        if saved_summary and saved_raw:
-            c1, c2 = st.columns([1, 1])
-            with c1:
-                if st.button("요약 보기", use_container_width=True, key="world_mode_summary"):
-                    st.session_state.world_view_mode = "summary"
-                    st.rerun()
-            with c2:
-                if st.button("원문 보기", use_container_width=True, key="world_mode_raw"):
-                    st.session_state.world_view_mode = "raw"
-                    st.rerun()
-
-        # 상단 액션 버튼(수정/삭제)
-        top_left, top_right = st.columns([8.0, 2.0], vertical_alignment="bottom")
-        with top_left:
+    # 보기 모드 토글도 전체폭 위에 배치
+    if saved_summary and saved_raw:
+        t1, t2, t3 = st.columns([1, 1, 2])
+        with t1:
+            if st.button("요약 보기", use_container_width=True, key="world_mode_summary"):
+                st.session_state.world_view_mode = "summary"
+                st.rerun()
+        with t2:
+            if st.button("원문 보기", use_container_width=True, key="world_mode_raw"):
+                st.session_state.world_view_mode = "raw"
+                st.rerun()
+        with t3:
             st.empty()
 
-        with top_right:
-            if not st.session_state.world_edit_mode:
-                if st.button("✏️ 수정", use_container_width=True, key="world_edit_btn"):
-                    st.session_state.world_edit_mode = True
-                    st.session_state.world_draft = _get_current_world_text()
-                    st.session_state.world_delete_armed = False
+    # 수정/삭제 버튼은 우측에만 두고, 내용은 밑에서 전체폭
+    a1, a2 = st.columns([7.5, 2.5], vertical_alignment="bottom")
+    with a1:
+        st.empty()
+    with a2:
+        if not st.session_state.world_edit_mode:
+            if st.button("✏️ 수정", use_container_width=True, key="world_edit_btn"):
+                st.session_state.world_edit_mode = True
+                st.session_state.world_draft = _get_current_world_text()
+                st.session_state.world_delete_armed = False
+                st.rerun()
+
+            if _get_current_world_text():
+                if st.button("🗑 삭제", use_container_width=True, key="world_delete_btn"):
+                    st.session_state.world_delete_armed = True
                     st.rerun()
-
-                if _get_current_world_text():
-                    if st.button("🗑 삭제", use_container_width=True, key="world_delete_btn"):
-                        st.session_state.world_delete_armed = True
-                        st.rerun()
-            else:
-                c1, c2 = st.columns([1, 1])
-                with c1:
-                    if st.button("💾 저장", use_container_width=True, key="world_save_btn"):
-                        draft = (st.session_state.world_draft or "").strip()
-                        ok = _save_world_to_backend(draft)
-                        if ok:
-                            st.toast("저장 완료", icon="✅")
-                            _pull_world_from_backend(show_toast=False)
-                        else:
-                            st.toast("저장 실패", icon="⚠️")
-                        st.session_state.world_edit_mode = False
-                        st.session_state.world_delete_armed = False
-                        st.rerun()
-                with c2:
-                    if st.button("↩ 취소", use_container_width=True, key="world_cancel_btn"):
-                        st.session_state.world_edit_mode = False
-                        st.session_state.world_delete_armed = False
-                        st.rerun()
-
-        # 삭제 확인
-        if (not st.session_state.world_edit_mode) and st.session_state.world_delete_armed:
-            st.warning("정말 삭제할까요? (plot.json의 세계관 내용이 비워집니다)")
-            c1, c2 = st.columns([1, 1])
-            with c1:
-                if st.button("✅ 삭제 확정", use_container_width=True, key="world_delete_confirm"):
-                    ok = _save_world_to_backend("")
+        else:
+            s1, s2 = st.columns([1, 1])
+            with s1:
+                if st.button("💾 저장", use_container_width=True, key="world_save_btn"):
+                    draft = (st.session_state.world_draft or "").strip()
+                    ok = _save_world_to_backend(draft)
                     if ok:
-                        st.toast("삭제 완료", icon="✅")
+                        st.toast("저장 완료", icon="✅")
                         _pull_world_from_backend(show_toast=False)
                     else:
-                        st.toast("삭제 실패", icon="⚠️")
+                        st.toast("저장 실패", icon="⚠️")
+                    st.session_state.world_edit_mode = False
                     st.session_state.world_delete_armed = False
                     st.rerun()
-            with c2:
-                if st.button("❌ 삭제 취소", use_container_width=True, key="world_delete_cancel"):
+            with s2:
+                if st.button("↩ 취소", use_container_width=True, key="world_cancel_btn"):
+                    st.session_state.world_edit_mode = False
                     st.session_state.world_delete_armed = False
                     st.rerun()
 
-        # 본문
-        if not st.session_state.world_edit_mode:
-            text_now = _get_current_world_text()
-            if text_now:
-                # 기본은 미리보기 + 전체는 expander
-                preview = _trim_preview(text_now, limit=1200)
-                st.markdown(f"<div class='view-box'>{preview}</div>", unsafe_allow_html=True)
+    if (not st.session_state.world_edit_mode) and st.session_state.world_delete_armed:
+        st.warning("정말 삭제할까요? (plot.json의 세계관 내용이 비워집니다)")
+        d1, d2 = st.columns([1, 1])
+        with d1:
+            if st.button("✅ 삭제 확정", use_container_width=True, key="world_delete_confirm"):
+                ok = _save_world_to_backend("")
+                if ok:
+                    st.toast("삭제 완료", icon="✅")
+                    _pull_world_from_backend(show_toast=False)
+                else:
+                    st.toast("삭제 실패", icon="⚠️")
+                st.session_state.world_delete_armed = False
+                st.rerun()
+        with d2:
+            if st.button("❌ 삭제 취소", use_container_width=True, key="world_delete_cancel"):
+                st.session_state.world_delete_armed = False
+                st.rerun()
 
-                if len(text_now) > 1200:
-                    with st.expander("전체 내용 보기", expanded=False):
-                        st.text_area(
-                            "전체 세계관",
-                            value=text_now,
-                            height=300,
-                            disabled=True,
-                            key="world_full_view"
-                        )
-            else:
-                st.markdown(
-                    "<div class='view-box' style='color: rgba(0,0,0,0.45)'>저장된 내용이 없습니다.</div>",
-                    unsafe_allow_html=True,
-                )
+    if not st.session_state.world_edit_mode:
+        text_now = _get_current_world_text()
+        if text_now:
+            preview = _trim_preview(text_now, limit=1200)
+            st.markdown(f"<div class='view-box'>{preview}</div>", unsafe_allow_html=True)
+
+            if len(text_now) > 1200:
+                with st.expander("전체 내용 보기", expanded=False):
+                    st.text_area(
+                        "전체 세계관",
+                        value=text_now,
+                        height=320,
+                        disabled=True,
+                        key="world_full_view",
+                    )
         else:
-            st.session_state.world_draft = st.text_area(
-                "세계관 내용",
-                value=st.session_state.world_draft,
-                height=320,
-                label_visibility="collapsed",
-                key="world_editor_textarea",
-            )
+            st.markdown("<div class='view-box muted'>저장된 내용이 없습니다.</div>", unsafe_allow_html=True)
+    else:
+        st.session_state.world_draft = st.text_area(
+            "세계관 내용",
+            value=st.session_state.world_draft,
+            height=360,
+            label_visibility="collapsed",
+            key="world_editor_textarea",
+        )
 
-
-# ---------- plot tab (history) ----------
 
 def _normalize_history_items(history: dict) -> list[tuple[int, dict]]:
     by_ep: dict[int, dict] = {}
@@ -400,5 +386,5 @@ def _render_plot_tab(proj):
                 height=150,
                 key=f"history_summary_view_{ep_no}",
                 disabled=True,
-                placeholder="요약이 없습니다."
+                placeholder="요약이 없습니다.",
             )
