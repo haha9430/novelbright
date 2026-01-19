@@ -1,5 +1,4 @@
 import streamlit as st
-import uuid
 import tempfile
 import os
 from pathlib import Path
@@ -9,7 +8,7 @@ from components.sidebar import render_sidebar
 from components.characters import render_characters
 
 try:
-    from api import ingest_file_to_backend, get_story_history_api
+    from api import ingest_file_to_backend, get_story_history_api, get_world_setting_api, save_world_setting_api
     from app.common.file_input import FileProcessor
 except ImportError:
     def ingest_file_to_backend(*args, **kwargs):
@@ -18,10 +17,65 @@ except ImportError:
     def get_story_history_api(*args, **kwargs):
         return {}, "ImportError: get_story_history_api"
 
+    def get_world_setting_api(*args, **kwargs):
+        return {}, "ImportError: get_world_setting_api"
+
+    def save_world_setting_api(*args, **kwargs):
+        return False
+
     class FileProcessor:
         @staticmethod
         def load_file_content(file):
             return "Dummy Content"
+
+
+def _ensure_world_state():
+    if "world_edit_mode" not in st.session_state:
+        st.session_state.world_edit_mode = False
+    if "world_draft" not in st.session_state:
+        st.session_state.world_draft = ""
+    if "world_loaded_from_backend" not in st.session_state:
+        st.session_state.world_loaded_from_backend = False
+    if "world_desc_view" not in st.session_state:
+        st.session_state.world_desc_view = ""
+    if "world_delete_armed" not in st.session_state:
+        st.session_state.world_delete_armed = False
+
+
+def _set_world_desc(desc: str):
+    st.session_state.world_desc_view = (desc or "").strip()
+
+
+def _pull_world_from_backend(show_toast: bool = False) -> None:
+    plot, err = get_world_setting_api()
+    if err:
+        if show_toast:
+            st.toast(f"세계관 불러오기 실패: {err}", icon="⚠️")
+        return
+
+    raw = str(plot.get("world_raw", "") or "").strip()
+    if raw:
+        _set_world_desc(raw)
+        if show_toast:
+            st.toast("plot.json에서 세계관 원문 불러옴", icon="✅")
+        return
+
+    summary = plot.get("summary")
+    if isinstance(summary, list) and summary:
+        s = "\n".join([str(x) for x in summary if str(x).strip()]).strip()
+        _set_world_desc(s)
+        if show_toast:
+            st.toast("plot.json에서 세계관 요약 불러옴", icon="✅")
+        return
+
+    _set_world_desc("")
+    if show_toast:
+        st.toast("저장된 세계관 내용이 없습니다.", icon="ℹ️")
+
+
+def _save_world_to_backend(text: str) -> bool:
+    # api.py에서 빈값도 허용하도록 바꿨기 때문에 삭제도 됨
+    return bool(save_world_setting_api(text or ""))
 
 
 def render_universe():
@@ -34,8 +88,7 @@ def render_universe():
 
     render_sidebar(proj)
 
-    if "worldview" not in proj:
-        proj["worldview"] = ""
+    _ensure_world_state()
 
     st.title(f"🌍 {proj['title']} - 설정")
     st.caption("작품의 등장인물, 세계관, 그리고 화별 플롯(요약)을 관리합니다.")
@@ -46,49 +99,55 @@ def render_universe():
         render_characters(proj)
 
     with tab_world:
-        _render_worldview_tab(proj)
+        _render_worldview_tab()
 
     with tab_plot:
         _render_plot_tab(proj)
 
 
-def _render_worldview_tab(proj):
+def _render_worldview_tab():
+    # ✅ 최초 1회: 백엔드에서 pull
+    if not st.session_state.world_loaded_from_backend:
+        _pull_world_from_backend(show_toast=False)
+        st.session_state.world_loaded_from_backend = True
+
+    st.markdown(
+        """
+        <style>
+        .world-desc-title { margin-top: 2px; color: #111; }
+        .view-box { white-space: pre-wrap; line-height: 1.75; padding: 14px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.08); background: rgba(0,0,0,0.02); min-height: 160px; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     with st.expander("파일로 세계관 자료 추가하기", expanded=False):
-        st.markdown("세계관 설정이 담긴 텍스트, PDF 문서를 업로드하여 AI에게 학습시킵니다.")
+        st.markdown("세계관 설정이 담긴 텍스트, PDF, DOCX 문서를 업로드하면 AI가 분석 후 plot.json에 저장합니다.")
         uploaded_file = st.file_uploader("파일 선택", type=["txt", "pdf", "docx"], key="world_uploader")
 
-        if uploaded_file and st.button("세계관 분석 및 추가", use_container_width=True):
+        if uploaded_file and st.button("세계관 분석 및 추가", use_container_width=True, key="world_ingest_btn"):
             with st.spinner("파일을 분석하여 세계관 DB에 저장 중입니다..."):
                 tmp_path = ""
                 try:
-                    # UploadedFile -> 임시 파일로 저장 (FileProcessor는 경로를 받는 구조라서)
                     suffix = Path(uploaded_file.name).suffix or ".tmp"
                     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                         tmp.write(uploaded_file.getbuffer())
                         tmp_path = tmp.name
 
                     content = FileProcessor.load_file_content(tmp_path)
-
                     if content and not content.startswith("[Error]"):
                         success, msg = ingest_file_to_backend(content, "world")
                         if success:
-                            proj["worldview"] = (
-                                proj.get("worldview", "").rstrip()
-                                + "\n\n"
-                                + content.strip()
-                            ).strip()
-                            st.success("세계관 자료가 성공적으로 추가되었습니다!")
+                            _pull_world_from_backend(show_toast=True)
+                            st.session_state.world_delete_armed = False
                             st.rerun()
                         else:
                             st.error(msg or "서버 전송 실패")
                     else:
                         st.error(content if content else "파일 내용을 읽을 수 없습니다.")
-
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
-
                 finally:
-                    # 임시파일 정리
                     if tmp_path:
                         try:
                             os.remove(tmp_path)
@@ -97,17 +156,81 @@ def _render_worldview_tab(proj):
 
     st.divider()
 
-    st.subheader("세계관 설명 (직접 입력)")
+    st.subheader("세계관 설명")
     with st.container(border=True):
-        world_text = st.text_area(
-            "이 작품의 규칙, 배경, 분위기, 기술/마법 체계 등을 기록하세요.",
-            value=proj.get("worldview", ""),
-            height=400,
-            key="worldview_input"
-        )
+        left, right = st.columns([8.0, 2.0], vertical_alignment="bottom")
+        with left:
+            st.markdown("<h3 class='world-desc-title'>🧾 저장된 세계관</h3>", unsafe_allow_html=True)
 
-        if world_text != proj.get("worldview", ""):
-            proj["worldview"] = world_text
+        with right:
+            saved_now = (st.session_state.world_desc_view or "").strip()
+
+            if not st.session_state.world_edit_mode:
+                if st.button("✏️ 수정", use_container_width=True, key="world_edit_btn"):
+                    st.session_state.world_edit_mode = True
+                    st.session_state.world_draft = saved_now
+                    st.session_state.world_delete_armed = False
+                    st.rerun()
+
+                if saved_now:
+                    if st.button("🗑 삭제", use_container_width=True, key="world_delete_btn"):
+                        st.session_state.world_delete_armed = True
+                        st.rerun()
+            else:
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    if st.button("💾 저장", use_container_width=True, key="world_save_btn"):
+                        draft = (st.session_state.world_draft or "").strip()
+                        ok = _save_world_to_backend(draft)
+                        if ok:
+                            st.toast("저장 완료", icon="✅")
+                            _pull_world_from_backend(show_toast=False)
+                        else:
+                            st.toast("저장 실패", icon="⚠️")
+                        st.session_state.world_edit_mode = False
+                        st.session_state.world_delete_armed = False
+                        st.rerun()
+                with c2:
+                    if st.button("↩ 취소", use_container_width=True, key="world_cancel_btn"):
+                        st.session_state.world_edit_mode = False
+                        st.session_state.world_delete_armed = False
+                        st.rerun()
+
+        if (not st.session_state.world_edit_mode) and st.session_state.world_delete_armed:
+            st.warning("정말 삭제할까요? (plot.json의 세계관 내용이 비워집니다)")
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                if st.button("✅ 삭제 확정", use_container_width=True, key="world_delete_confirm"):
+                    ok = _save_world_to_backend("")
+                    if ok:
+                        st.toast("삭제 완료", icon="✅")
+                        _pull_world_from_backend(show_toast=False)
+                    else:
+                        st.toast("삭제 실패", icon="⚠️")
+                    st.session_state.world_delete_armed = False
+                    st.rerun()
+            with c2:
+                if st.button("❌ 삭제 취소", use_container_width=True, key="world_delete_cancel"):
+                    st.session_state.world_delete_armed = False
+                    st.rerun()
+
+        if not st.session_state.world_edit_mode:
+            saved = (st.session_state.world_desc_view or "").strip()
+            if saved:
+                st.markdown(f"<div class='view-box'>{saved}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    "<div class='view-box' style='color: rgba(0,0,0,0.45)'>설명을 입력하거나 파일을 업로드하세요.</div>",
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.session_state.world_draft = st.text_area(
+                "세계관 내용",
+                value=st.session_state.world_draft,
+                height=320,
+                label_visibility="collapsed",
+                key="world_editor_textarea",
+            )
 
 
 def _normalize_history_items(history: dict) -> list[tuple[int, dict]]:

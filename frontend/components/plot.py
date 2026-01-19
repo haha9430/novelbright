@@ -16,13 +16,25 @@ def _ensure_state():
     if "world_loaded_from_backend" not in st.session_state:
         st.session_state.world_loaded_from_backend = False
 
+    # 화면에 보여줄 세계관 텍스트는 세션에 고정 (rerun 대비)
+    if "world_desc_view" not in st.session_state:
+        st.session_state.world_desc_view = ""
 
-def _save_world_and_plot_json(draft: str) -> tuple[bool, str]:
-    draft = (draft or "").strip()
-    if not draft:
-        return False, "세계관 내용이 비어있음"
+    # 삭제 확인용
+    if "world_delete_armed" not in st.session_state:
+        st.session_state.world_delete_armed = False
+
+
+def _set_world_desc(world: dict, desc: str) -> None:
+    desc = (desc or "").strip()
+    st.session_state.world_desc_view = desc
+    world["desc"] = desc
+
+
+def _save_world_to_backend(draft: str) -> tuple[bool, str]:
+    # 저장은 빈 값도 허용(삭제용)
     try:
-        ok = bool(save_world_setting_api(draft))
+        ok = bool(save_world_setting_api((draft or "").strip()))
         if ok:
             return True, ""
         return False, "plot.json 저장 실패"
@@ -39,16 +51,24 @@ def _pull_world_raw_into_view(world: dict, show_toast: bool = False) -> None:
 
     raw = str(plot.get("world_raw", "") or "").strip()
     if raw:
-        world["desc"] = raw
+        _set_world_desc(world, raw)
         if show_toast:
             st.toast("plot.json에서 세계관 원문 불러옴", icon="✅")
-    else:
-        # raw가 없으면 요약이라도
-        summary = plot.get("summary")
-        if isinstance(summary, list) and summary:
-            world["desc"] = "\n".join([str(x) for x in summary if str(x).strip()]).strip()
-            if show_toast:
-                st.toast("plot.json에서 세계관 요약 불러옴", icon="✅")
+        return
+
+    # raw가 없으면 요약이라도
+    summary = plot.get("summary")
+    if isinstance(summary, list) and summary:
+        s = "\n".join([str(x) for x in summary if str(x).strip()]).strip()
+        _set_world_desc(world, s)
+        if show_toast:
+            st.toast("plot.json에서 세계관 요약 불러옴", icon="✅")
+        return
+
+    # 둘 다 없으면 비움
+    _set_world_desc(world, "")
+    if show_toast:
+        st.toast("저장된 세계관 내용이 없습니다.", icon="ℹ️")
 
 
 def render_plot():
@@ -61,14 +81,18 @@ def render_plot():
 
     if "world" not in proj or not isinstance(proj.get("world"), dict):
         proj["world"] = {"id": "world", "name": "세계관", "desc": ""}
+
     world = proj["world"]
 
     render_sidebar(proj)
 
-    # ✅ 최초 1회: plot.json에서 world_raw를 가져와 desc에 채움
+    # ✅ 최초 1회: 백엔드에서 가져와 세션/월드 동기화
     if not st.session_state.world_loaded_from_backend:
         _pull_world_raw_into_view(world, show_toast=False)
         st.session_state.world_loaded_from_backend = True
+    else:
+        # rerun으로 world가 초기화되는 경우 대비: 세션값으로 복구
+        _set_world_desc(world, st.session_state.world_desc_view)
 
     st.markdown(
         """
@@ -90,6 +114,7 @@ def render_plot():
             type=["pdf", "docx", "txt"],
             key="world_file_uploader",
         )
+
         if uploaded_file:
             if st.button("🚀 AI 분석 및 저장 시작", key="world_ingest_btn", use_container_width=True):
                 with st.spinner("AI가 세계관을 분석 중입니다..."):
@@ -97,8 +122,12 @@ def render_plot():
                     if text and not text.startswith("[Error]"):
                         ok, msg = ingest_file_to_backend(text, "world")
                         if ok:
-                            # ✅ 저장됐으니 바로 plot.json에서 원문 다시 끌어와서 화면 반영
+                            # ✅ 업로드 저장 성공 -> 백엔드에서 다시 pull 해서 바로 반영
                             _pull_world_raw_into_view(world, show_toast=True)
+
+                            # 다음 rerun에서도 다시 백엔드 값을 기준으로 보이게
+                            st.session_state.world_loaded_from_backend = True
+                            st.session_state.world_delete_armed = False
                             st.rerun()
                         else:
                             st.error(msg)
@@ -107,36 +136,72 @@ def render_plot():
 
     with st.container(border=True):
         left, right = st.columns([8.0, 2.0], vertical_alignment="bottom")
+
         with left:
             st.markdown("<h3 class='world-desc-title'>🧾 세계관 설명</h3>", unsafe_allow_html=True)
+
         with right:
+            saved_now = (st.session_state.world_desc_view or "").strip()
+
             if not st.session_state.world_edit_mode:
+                # 수정 버튼
                 if st.button("✏️ 수정", key="world_edit_btn", use_container_width=True):
                     st.session_state.world_edit_mode = True
-                    st.session_state.world_draft = world.get("desc", "")
+                    st.session_state.world_draft = saved_now
+                    st.session_state.world_delete_armed = False
                     st.rerun()
+
+                # 삭제 버튼(내용 있을 때만)
+                if saved_now:
+                    if st.button("🗑 삭제", key="world_delete_btn", use_container_width=True):
+                        st.session_state.world_delete_armed = True
+                        st.rerun()
+
             else:
                 c1, c2 = st.columns([1, 1])
                 with c1:
                     if st.button("💾 저장", key="world_save_btn", use_container_width=True):
                         draft = (st.session_state.world_draft or "").strip()
-                        world["desc"] = draft
-                        ok, msg = _save_world_and_plot_json(draft)
+                        ok, msg = _save_world_to_backend(draft)
                         if ok:
                             st.toast("저장 완료", icon="✅")
-                            # 저장 성공하면 plot.json에서 다시 읽어와 동기화
+                            # 저장 성공 -> 백엔드 기준으로 다시 당겨서 동기화
                             _pull_world_raw_into_view(world, show_toast=False)
                         else:
                             st.toast(f"저장 실패: {msg}".strip(), icon="⚠️")
+
                         st.session_state.world_edit_mode = False
+                        st.session_state.world_delete_armed = False
                         st.rerun()
+
                 with c2:
                     if st.button("↩ 취소", key="world_cancel_btn", use_container_width=True):
                         st.session_state.world_edit_mode = False
+                        st.session_state.world_delete_armed = False
                         st.rerun()
 
+        # 삭제 확인 UI
+        if (not st.session_state.world_edit_mode) and st.session_state.world_delete_armed:
+            st.warning("정말 삭제할까요? (plot.json의 세계관 내용이 비워집니다)")
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                if st.button("✅ 삭제 확정", key="world_delete_confirm", use_container_width=True):
+                    ok, msg = _save_world_to_backend("")  # 빈 값 저장 = 삭제 처리
+                    if ok:
+                        st.toast("삭제 완료", icon="✅")
+                        _pull_world_raw_into_view(world, show_toast=False)
+                    else:
+                        st.toast(f"삭제 실패: {msg}".strip(), icon="⚠️")
+                    st.session_state.world_delete_armed = False
+                    st.rerun()
+            with c2:
+                if st.button("❌ 삭제 취소", key="world_delete_cancel", use_container_width=True):
+                    st.session_state.world_delete_armed = False
+                    st.rerun()
+
+        # 본문 렌더링
         if not st.session_state.world_edit_mode:
-            saved = (world.get("desc") or "").strip()
+            saved = (st.session_state.world_desc_view or "").strip()
             if saved:
                 st.markdown(f"<div class='view-box'>{saved}</div>", unsafe_allow_html=True)
             else:

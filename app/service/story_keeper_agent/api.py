@@ -2,7 +2,6 @@
 import sys
 import os
 import json
-import inspect
 from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
@@ -42,6 +41,12 @@ def _safe_read_json(path: str) -> dict:
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def _safe_write_json(path: str, data: Any) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
 
 def _load_plot_config() -> dict:
@@ -131,7 +136,6 @@ def get_story_history():
         raise HTTPException(status_code=500, detail=f"history load failed: {e}")
 
 
-# ✅ 추가: plot.json(세계관 원문/요약) 읽기 API
 @router.get(
     "/world_setting",
     summary="World/Plot Setting (Read)",
@@ -153,7 +157,30 @@ def get_world_setting():
     description="설정 입력 -> plot.json 갱신(PlotManager 내부 저장)",
 )
 def world_setting(text: str = Body(..., media_type="text/plain")):
-    return manager.update_global_settings(text)
+    try:
+        # ✅ 빈 값이면 삭제로 처리
+        if not (text or "").strip():
+            path = _data_path("plot.json")
+            plot = _safe_read_json(path)
+            if not isinstance(plot, dict):
+                plot = {}
+
+            plot["world_raw"] = ""
+            plot["summary"] = []
+            # 혹시 다른 키로 저장되는 케이스도 같이 비움(안전)
+            for k in ("world", "world_setting", "worldSettings", "settings", "setting", "global"):
+                v = plot.get(k)
+                if isinstance(v, dict):
+                    v.pop("world_raw", None)
+                    v.pop("summary", None)
+
+            _safe_write_json(path, plot)
+            return {"status": "success", "message": "world cleared", "plot": plot}
+
+        return manager.update_global_settings(text)
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 class IngestRequest(BaseModel):

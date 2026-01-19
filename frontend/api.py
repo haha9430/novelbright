@@ -107,14 +107,7 @@ def get_story_history_api(timeout: int = 8) -> Tuple[Dict[str, Any], str]:
         return {}, f"히스토리 API 통신 오류: {e}"
 
 
-# ✅ 추가: plot.json(세계관 원문/요약) 가져오기
 def get_world_setting_api(timeout: int = 8) -> Tuple[Dict[str, Any], str]:
-    """
-    GET {BASE_URL}/story/world_setting
-    return:
-      - 성공: (plot_dict, "")
-      - 실패: ({}, "에러 메시지")
-    """
     url = f"{BASE_URL}/story/world_setting"
     try:
         res = requests.get(url, timeout=timeout)
@@ -188,9 +181,8 @@ def save_character_api(name: str, description: str) -> bool:
 
 
 def save_world_setting_api(content: str) -> bool:
-    text = (content or "").strip()
-    if not text:
-        return False
+    # ✅ 빈 값도 허용 (삭제용)
+    text = (content or "")
 
     url = f"{BASE_URL}/story/world_setting"
     headers = {"Content-Type": "text/plain; charset=utf-8"}
