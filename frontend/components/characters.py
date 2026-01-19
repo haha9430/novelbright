@@ -58,9 +58,10 @@ except ImportError as error:
 
 def render_characters(proj):
     """
-    등장인물 관리 탭 UI (통합 입력 방식 + 데이터 로드 강화 버전)
+    등장인물 관리 탭 UI (통합 입력 방식 + 데이터 동기화 강화)
     """
-    # 🔴 [개선] 데이터 로드 로직 강화 (리스트/딕셔너리 대응)
+    # 1. 데이터 로드: 파일 내용을 읽어와서 확실히 리스트로 변환
+    # 이 부분이 누락되면 카드가 뜨지 않습니다.
     with st.status("데이터 동기화 중...", expanded=False) as status:
         raw_data = load_characters_from_file()
 
@@ -74,19 +75,20 @@ def render_characters(proj):
 
         status.update(label=f"총 {len(proj['characters'])}명의 데이터를 불러왔습니다.", state="complete")
 
-    # 1. 상단 액션 버튼 영역
+    # 2. 상단 액션 버튼 영역
     col_add, col_file = st.columns([1, 1], gap="small")
 
     with col_add:
+        # 🟢 직접 추가: 통합 입력 방식 (나이/성별 구분 없음)
         with st.popover("➕ 인물 직접 추가", use_container_width=True):
             st.markdown("### 새로운 인물 추가")
-            new_name = st.text_input("이름", placeholder="예: 이도훈")
+            new_name = st.text_input("이름", placeholder="예: 이도훈", key="new_char_name")
 
-            # 현빈님이 원하신 통합 입력창
             new_description = st.text_area(
                 "인물 상세 설정",
-                placeholder="나이, 성별, 특징 등을 자유롭게 나열해서 적어주세요.",
-                height=200
+                placeholder="나이, 성별, 직업, 특징 등을 자유롭게 나열해서 적어주세요.",
+                height=250,
+                key="new_char_desc"
             )
 
             if st.button("💾 저장하기", use_container_width=True, type="primary"):
@@ -114,6 +116,7 @@ def render_characters(proj):
                         st.error("서버 저장에 실패했습니다.")
 
     with col_file:
+        # 📂 파일 일괄 추가: AI 분석 연동
         with st.popover("📂 파일로 일괄 추가", use_container_width=True):
             st.markdown("PDF, TXT 파일을 지원하며 AI가 인물을 추출합니다.")
             uploaded_file = st.file_uploader("파일 선택", type=["txt", "pdf", "docx"], key="char_uploader")
@@ -142,7 +145,8 @@ def render_characters(proj):
 
     st.divider()
 
-    # 2. 등장인물 리스트 렌더링
+    # 3. 등장인물 리스트 렌더링
+    # 데이터가 없을 때의 예외 처리가 하단 카드 출력을 결정합니다.
     if not proj.get("characters"):
         st.info("등록된 등장인물이 없습니다. 파일을 추가하거나 직접 등록해 보세요.")
         return
@@ -153,41 +157,51 @@ def render_characters(proj):
     cols = st.columns(2)
 
     for idx, char in enumerate(proj["characters"]):
-        # 개별 캐릭터 데이터에서 이름 추출
-        char_name = char.get("name") if isinstance(char, dict) else f"인물 {idx + 1}"
-        char_id = f"char_{idx}_{char_name}"
+        # 개별 캐릭터 데이터에서 이름 추출 및 고유 키 생성
+        if not isinstance(char, dict): continue
+
+        char_name = char.get("name", f"인물 {idx + 1}")
+        char_id = f"char_{idx}_{char_name.replace(' ', '_')}"
 
         with cols[idx % 2]:
             with st.container(border=True):
                 c_img, c_info = st.columns([1, 2])
 
                 with c_img:
+                    # 기본 이미지 영역
                     st.markdown(
-                        "<div style='background-color:#f0f2f6;height:80px;display:flex;align-items:center;justify-content:center;border-radius:5px;color:#999;font-size:12px;font-weight:bold;'>No Img</div>",
-                        unsafe_allow_html=True)
+                        """
+                        <div style='background-color:#f0f2f6;height:100px;display:flex;align-items:center;justify-content:center;border-radius:5px;color:#999;font-size:12px;font-weight:bold;'>
+                        No Img
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
 
                 with c_info:
                     st.subheader(char_name)
-                    # job_status 내용을 요약해서 보여줌
-                    desc = char.get('job_status', '정보 없음') if isinstance(char, dict) else "데이터 형식 오류"
+                    # 통합된 정보를 요약해서 보여줌
+                    desc = char.get('job_status', '정보 없음')
                     st.caption(desc[:45] + "..." if len(desc) > 45 else desc)
 
+                    # 상세 설정 창 (여기서 주루루룩 수정 가능)
                     with st.expander("📝 상세 설정"):
                         edited_info = st.text_area(
                             "인물 설정 내용",
                             value=desc,
-                            height=150,
+                            height=200,
                             key=f"edit_area_{char_id}"
                         )
 
-                        if st.button("💾 저장", key=f"save_btn_{char_id}", use_container_width=True, type="primary"):
-                            if isinstance(char, dict):
+                        btn_col1, btn_col2 = st.columns(2)
+                        with btn_col1:
+                            if st.button("💾 저장", key=f"save_btn_{char_id}", use_container_width=True, type="primary"):
                                 char["job_status"] = edited_info
                                 save_character_api(char_name, char)
                                 st.toast(f"{char_name} 저장 완료!", icon="✅")
                                 st.rerun()
-
-                        if st.button("🗑️ 삭제", key=f"del_btn_{char_id}", use_container_width=True):
-                            proj["characters"].pop(idx)
-                            # 삭제 후 파일 업데이트 로직 필요 시 추가
-                            st.rerun()
+                        with btn_col2:
+                            if st.button("🗑️ 삭제", key=f"del_btn_{char_id}", use_container_width=True):
+                                proj["characters"].pop(idx)
+                                # (추가 필요 시) 삭제 API 호출 로직
+                                st.rerun()
