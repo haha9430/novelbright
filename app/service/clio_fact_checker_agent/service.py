@@ -369,41 +369,49 @@ class ManuscriptAnalyzer:
             print(f"⚠️ Tavily 검색 중 오류 발생: {e}")
             return None
 
-    def _verify_content_relevance(self, keyword: str, query: str, content: str, context: str) -> Dict[str, Any]:
+    def _verify_batch_relevance(self, batch_items: List[Dict]) -> Dict[str, Dict]:
         """
-        [NEW] 검색 결과 검증 + 팩트체크
-        context: 검색을 하게 된 원문 맥락 (예: '조선시대에 감자가 있었는지 확인')
+        [1차 검증] 여러 건의 검색 결과를 한 번에 검증하는 함수
         """
+        items_text = ""
+        for idx, item in enumerate(batch_items):
+            items_text += f"""
+            ---
+            [항목 {idx+1}]
+            - 키워드(ID): {item['keyword']}
+            - 소설 속 맥락: {item['context']}
+            - 검색 결과: {item['content'][:800]} ... (생략)
+            """
+
         prompt = f"""
-        당신은 역사 소설의 고증을 담당하는 팩트체커입니다.
+        당신은 역사 소설 팩트체커입니다. 아래 {len(batch_items)}개의 항목을 검토하여 JSON으로 응답하세요.
 
-        [상황]
-        작가가 소설을 쓰다가 **"{context}"** 라는 의문을 품고
-        '{keyword}'(쿼리: {query})를 검색하여 아래 결과를 얻었습니다.
-
-        [검색 결과]
-        {content[:1500]}
+        [입력 데이터]
+        {items_text}
 
         [판단 기준]
-        1. **is_relevant (자료 적합성)**: 검색 결과가 '역사/지리/인물' 정보가 맞으면 true. (현대 연예인, 광고면 false)
-        2. **is_positive (사실 일치 여부)**: 
-           - 검색 결과에 비추어 볼 때, 작가의 의도나 묘사가 역사적 사실과 **일치하거나 가능성이 있으면 true**.
-           - 명백한 시대착오(예: 조선시대 커피)거나 **오류라면 false**.
-           - 판단이 불가능하면 true(보류)로 처리.
+        1. **is_relevant**: 검색 결과가 해당 키워드의 역사/정보 확인에 유효한 자료인가? (광고/무관하면 false)
+        2. **is_positive**: 
+           - 역사적 사실과 일치하거나 개연성이 있으면 true.
+           - 명백한 오류(시대착오 등)면 false.
+           - 판단 보류 시 true.
 
-        결과를 JSON으로 반환하세요:
+        [출력 형식]
+        반드시 아래와 같은 **JSON 객체**로 반환하세요. 키(Key)는 각 항목의 '키워드(ID)'여야 합니다.
+
         {{
-            "is_relevant": true/false,
-            "is_positive": true/false,
-            "reason": "판단의 근거 한 문장 (특히 false일 경우 구체적으로)"
+            "키워드1": {{ "is_relevant": true, "is_positive": true, "reason": "근거 요약" }},
+            "키워드2": {{ "is_relevant": false, "is_positive": false, "reason": "관련 없는 자료임" }}
         }}
         """
+
         try:
             response = self.llm.invoke([SystemMessage(content=prompt)])
+            # 기존에 정의된 _clean_json_string 메서드를 사용하여 파싱
             return self._clean_json_string(response.content)
         except Exception as e:
-            # 에러 나면 일단 통과 (False Negative 방지)
-            return {"is_relevant": True, "reason": f"{str(e)}"}
+            print(f"⚠️ 1차 배치 검증 중 에러: {e}")
+            return {}
 
     def _parse_json_garbage(self, text: str) -> List[Dict]:
         """LLM이 주는 지저분한 JSON 문자열에서 리스트만 추출"""
@@ -555,3 +563,43 @@ class ManuscriptAnalyzer:
 
         # 모든 방법 실패
         return -1, -1
+
+    def _double_check_batch_results(self, batch_items: List[Dict], first_results: Dict) -> Dict:
+        """
+        [2차 검증] 1차 검증 결과를 비판적으로 재검토하는 교차 검증 함수
+        """
+        audit_payload = ""
+        for idx, item in enumerate(batch_items):
+            kw = item['keyword']
+            f_res = first_results.get(kw, {"is_positive": True, "reason": "1차 검증 데이터 누락", "is_relevant": True})
+
+            audit_payload += f"""
+            ---
+            [항목 {idx+1}: {kw}]
+            - 소설 맥락: {item['context']}
+            - 검색 증거: {item['content'][:600]}...
+            - 1차 판단 결과: {"일치" if f_res.get("is_positive") else "오류"}
+            - 1차 판단 근거: {f_res.get("reason")}
+            """
+
+        prompt = f"""
+        당신은 역사 소설 고증의 최종 감수관입니다. 
+        1차 팩트체커가 내린 결론이 '검색 증거'와 '소설 맥락'에 비추어 볼 때 정말 타당한지 재검토하십시오.
+        만약 1차 판단이 틀렸다면 이를 바로잡고, 맞다면 근거를 보강하십시오.
+
+        [입력 데이터]
+        {audit_payload}
+
+        [출력 형식]
+        반드시 각 항목의 키워드를 키(Key)로 하는 JSON 객체로 반환하세요.
+        {{
+            "키워드": {{ "is_relevant": true, "is_positive": true/false, "reason": "최종 확정된 고증 근거" }}
+        }}
+        """
+
+        try:
+            response = self.llm.invoke([SystemMessage(content=prompt)])
+            return self._clean_json_string(response.content)
+        except Exception as e:
+            print(f"⚠️ 2차 교차 검증 중 에러: {e}")
+            return first_results  # 에러 시 1차 결과 반환
