@@ -15,6 +15,7 @@ router = APIRouter(prefix="/manuscript", tags=["Fact Checker"])
 # 주의: 실행 위치에 따라 경로가 달라질 수 있으므로 절대 경로 사용 권장
 BASE_DIR = os.getcwd()
 PLOT_DB_PATH = os.path.join(BASE_DIR, "app/data/plot.json") # 경로 확인 필요
+CHARACTER_DB_PATH = os.path.join(BASE_DIR, "app/data/characters.json")
 
 # Analyzer 인스턴스 (전역)
 # 실제 프로덕션에서는 Depends를 이용한 의존성 주입을 권장하지만, 현재 구조 유지
@@ -28,7 +29,7 @@ async def analyze_manuscript_file(
     """
     [파일 업로드] 원고 분석 요청
     """
-    analyzer = ManuscriptAnalyzer(setting_path=PLOT_DB_PATH)
+    analyzer = ManuscriptAnalyzer(setting_path=PLOT_DB_PATH, character_path=CHARACTER_DB_PATH)
 
     try:
         # 1. 파일 읽기 (Bytes -> String)
