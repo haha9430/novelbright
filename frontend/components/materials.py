@@ -21,6 +21,29 @@ BASE_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
 # HWP 관련 헬퍼 함수들(get_hwp_text, get_hwpx_text)은 이제 다 지우셔도 됩니다.
 
+# =========================================================
+# JSON DB 관리 함수 (로딩/저장)
+# =========================================================
+
+def load_materials_from_json():
+    """materials_db.json 파일에서 자료 목록을 읽어옵니다."""
+    if not os.path.exists(DB_FILE):
+        return []
+    try:
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        st.error(f"기존 자료 로딩 실패: {e}")
+        return []
+
+def save_materials_to_json(materials):
+    """자료 목록을 materials_db.json 파일에 저장합니다."""
+    try:
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(materials, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error(f"자료 저장 실패: {e}")
+
 def parse_file_content(uploaded_file):
     """
     업로드된 파일 객체를 받아 텍스트를 추출하여 반환 (HWP/HWPX 미지원)
