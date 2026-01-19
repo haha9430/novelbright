@@ -43,24 +43,27 @@ def render_characters(proj):
             )
 
             # FileProcessor 및 백엔드 전송 로직
-            if uploaded_file and st.button("파일 처리 및 AI 분석 시작", use_container_width=True):
-                with st.spinner("분석 중..."):
+            # 🚀 파일 처리 및 AI 분석 시작 버튼 로직
+            if uploaded_file and st.button("🚀 파일 처리 및 AI 분석 시작", use_container_width=True):
+                with st.spinner("파일을 읽고 캐릭터를 추출 중입니다..."):
                     try:
-                        # 1. 텍스트 추출 (공용 모듈 사용)
+                        # 1. 텍스트 추출 (FileProcessor 사용)
                         content = FileProcessor.load_file_content(uploaded_file)
 
-                        if content and not content.startswith("[Error]"):
-                            # 2. 백엔드 전송
-                            success = ingest_file_to_backend(content, "character")
+                        if content and not str(content).startswith("[Error]"):
+                            # [핵심] 성공 여부와 상세 메시지를 동시에 받음
+                            success, msg = ingest_file_to_backend(content, "character")
+
                             if success:
-                                st.success("완료되었습니다!")
+                                st.success(f"✅ {msg}")
                                 st.rerun()
                             else:
-                                st.error("서버 전송 실패")
+                                # 이제 백엔드에서 왜 실패했는지(예: 경로 오류 등)를 화면에 띄워줍니다.
+                                st.error(f"❌ 분석 실패: {msg}")
                         else:
-                            st.error("파일 읽기 실패")
+                            st.error(f"❌ 파일 읽기 실패: {content}")
                     except Exception as e:
-                        st.error(f"오류: {e}")
+                        st.error(f"⚠️ 시스템 오류 발생: {e}")
 
     st.divider()
 
