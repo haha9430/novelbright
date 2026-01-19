@@ -1,5 +1,6 @@
 # main.py (프로젝트 루트 위치)
 from dotenv import load_dotenv
+
 load_dotenv()  # .env 파일을 읽어서 환경변수로 로드함
 
 from fastapi import FastAPI
@@ -9,6 +10,9 @@ from contextlib import asynccontextmanager
 from app.service.clio_fact_checker_agent.router import router as manuscript_router
 from app.service.clio_fact_checker_agent.history_router import router as history_router
 from app.service.story_keeper_agent.api import router as story_keeper_router
+
+# ✅ [추가됨] 파일 처리 서비스 Import
+from app.service.ingest_service import StoryIngestionService
 
 # 공용 모듈 Import
 from app.common.history import repo as history_repo
@@ -20,6 +24,7 @@ import uuid
 
 # DB 파일 경로 (루트 기준이므로 app/... 으로 시작)
 HISTORY_DB_PATH = "app/data/history_db.json"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,6 +39,7 @@ async def lifespan(app: FastAPI):
 
     yield
     print("👋 [Shutdown] 서버 종료")
+
 
 app = FastAPI(
     title="Moneta Project Server",
@@ -50,6 +56,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # --------------------------------------------------------------------------
 # [Models] 데이터 모델
 # --------------------------------------------------------------------------
@@ -59,11 +66,20 @@ class DocumentPayload(BaseModel):
     title: str = ""
     content: str
 
+
 class MaterialPayload(BaseModel):
     id: str
     title: str
     category: str
     content: str
+
+
+# ✅ [추가됨] 프론트엔드 요청 데이터 모델
+class IngestRequest(BaseModel):
+    text: str
+    type: str  # 'character' 또는 'world'
+
+
 # --------------------------------------------------------------------------
 # [API] 문서 (Documents)
 # --------------------------------------------------------------------------
@@ -132,6 +148,24 @@ def api_delete_material(material_id: str):
     print(f"🗑️ [Mat Delete] ID: {material_id}")
     return {"status": "success", "msg": "자료 삭제 완료"}
 
+
+# --------------------------------------------------------------------------
+# ✅ [추가됨] 스토리 Ingest API (프론트 연결용)
+# --------------------------------------------------------------------------
+@app.post("/story/ingest", tags=["Story Keeper"])
+async def ingest_content(request: IngestRequest):
+    """
+    프론트엔드에서 텍스트를 받아 분석 및 저장
+    """
+    service = StoryIngestionService()
+    success = service.process_text(request.text, request.type)
+
+    if success:
+        return {"status": "success", "message": "분석 및 저장이 완료되었습니다."}
+    else:
+        return {"status": "error", "message": "서버 내부 처리 중 실패했습니다."}
+
+
 # ---------------------------------------------------------
 # 라우터 등록 (Include Routers)
 # ---------------------------------------------------------
@@ -142,6 +176,7 @@ app.include_router(manuscript_router)
 app.include_router(history_router)
 
 app.include_router(story_keeper_router)
+
 
 @app.get("/health")
 def health_check():

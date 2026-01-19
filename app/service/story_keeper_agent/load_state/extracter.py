@@ -4,18 +4,22 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
-from dotenv import load_dotenv
-from langchain_upstage import ChatUpstage
+# 라이브러리가 없을 경우를 대비한 안전장치
+try:
+    from dotenv import load_dotenv
+    from langchain_upstage import ChatUpstage
+except ImportError:
+    pass
 
 
 # =========================================================
-# 🛠️ 유틸리티 함수 (기존 로직 유지)
+# 🛠️ 유틸리티 함수
 # =========================================================
 
 def _project_root() -> Path:
-    # 경로 깊이에 따라 parents[n] 조절 필요 (현재 깊이 4 기준)
+    # 현재 파일 위치 기준 프로젝트 루트 찾기 (깊이에 따라 조정 필요)
     return Path(__file__).resolve().parents[4]
 
 
@@ -77,12 +81,12 @@ def _pick_summary(text: str) -> List[str]:
 
 
 # =========================================================
-# 🏛️ PlotManager 클래스 (기존 기능 + 안전한 업데이트)
+# 🏛️ PlotManager 클래스
 # =========================================================
 
 class PlotManager:
     """
-    plot.json / story_history.json 관리
+    plot.json / story_history.json 관리 및 세계관 설정 업데이트
     """
 
     def __init__(self):
@@ -112,7 +116,6 @@ class PlotManager:
 
         # 디렉토리 생성 보장
         self.data_dir.mkdir(parents=True, exist_ok=True)
-
         print(f"📂 Active Data Dir: {self.data_dir}")
 
     def _fix_ssl_cert_env(self) -> None:
@@ -143,8 +146,9 @@ class PlotManager:
         if not raw:
             return {}
         raw = raw.strip()
-        raw = re.sub(r"^```(?:json)?", "", raw, flags=re.IGNORECASE).strip()
-        raw = re.sub(r"```$", "", raw).strip()
+        # 마크다운 코드 블록 제거
+        raw = re.sub(r"^```(?:json)?", "", raw, flags=re.IGNORECASE | re.MULTILINE).strip()
+        raw = re.sub(r"```$", "", raw, flags=re.MULTILINE).strip()
 
         m = re.search(r"\{.*\}", raw, flags=re.DOTALL)
         if not m:
@@ -156,7 +160,93 @@ class PlotManager:
             return {}
 
     # ---------------------------------------------------------
-    # ✅ (기존 기능 1) 에피소드 요약 및 히스토리 저장
+    # ✅ (핵심 수정) 호환성 유지: episode_no 인자 처리 추가
+    # ---------------------------------------------------------
+    def update_global_settings(self, text: Union[str, int], episode_no: Optional[Union[int, str]] = 0) -> Dict[
+        str, Any]:
+        """
+        [Ingest용 & Legacy 호환]
+        - ingest 호출 시: update_global_settings("텍스트내용") -> episode_no=0
+        - 기존 호출 시: update_global_settings(episode_no=1, text="내용") 또는 (1, "내용")
+        """
+
+        # 1. 인자 순서/타입 자동 보정 (순서가 바뀌어 들어와도 처리)
+        real_text = ""
+
+        # Case A: (text="...", episode_no=...) -> 정상
+        if isinstance(text, str):
+            real_text = text
+        # Case B: (text=1, episode_no="...") -> 순서 바뀜 (episode_no 자리에 텍스트가 들어옴)
+        elif isinstance(text, int) and isinstance(episode_no, str):
+            real_text = episode_no
+
+        if not real_text or not real_text.strip():
+            return {"status": "error", "message": "empty text"}
+
+        # 2. 요약 및 장르 추출
+        summary = _pick_summary(real_text)
+
+        allowed_genres = [
+            "로맨스", "로맨스판타지", "현대판타지", "판타지", "무협",
+            "헌터/게이트", "회귀", "빙의", "환생", "이세계",
+            "대체역사", "역사", "추리/미스터리", "스릴러", "공포",
+            "SF", "드라마", "코미디", "액션", "모험", "전쟁",
+            "정치", "의학", "성장", "학원", "서바이벌", "디스토피아"
+        ]
+        genre: List[str] = ["드라마"]
+
+        if self.llm is not None:
+            prompt = f"""
+너는 웹소설 편집자다. 아래 글을 읽고 장르를 추측해라.
+[규칙]
+- 출력은 JSON만
+- 키는 "genre" 하나만 (리스트)
+- 반드시 후보에서만 선택
+- 최소 1개, 최대 3개
+- 후보: {allowed_genres}
+
+[텍스트]
+{real_text[:3500]}
+"""
+            try:
+                res = self.llm.invoke(prompt)
+                raw = getattr(res, "content", str(res))
+                data = self._safe_json(raw) or {}
+                g = data.get("genre", [])
+
+                if isinstance(g, str) and g.strip():
+                    g_list = [g.strip()]
+                elif isinstance(g, list):
+                    g_list = [str(x).strip() for x in g if str(x).strip()]
+                else:
+                    g_list = []
+
+                # 필터링
+                allowed = set(allowed_genres)
+                cleaned = []
+                for x in g_list:
+                    if x in allowed and x not in cleaned:
+                        cleaned.append(x)
+
+                genre = cleaned[:3] if cleaned else ["드라마"]
+            except Exception:
+                pass
+
+        # 3. 데이터 저장
+        current_data = _read_json(self.global_setting_file, default={})
+        current_data["summary"] = summary
+        current_data["genre"] = genre
+
+        try:
+            _write_json(self.global_setting_file, current_data)
+            print(f"🌍 [세계관 설정] 업데이트 완료: {self.global_setting_file}")
+            return {"status": "success", "data": current_data}
+        except Exception as e:
+            print(f"🔥 [세계관 설정] 저장 실패: {e}")
+            return {"status": "error", "message": str(e)}
+
+    # ---------------------------------------------------------
+    # (기존 기능) 에피소드 요약 및 히스토리 저장
     # ---------------------------------------------------------
     def summarize_and_save(self, episode_no: int, full_text: str) -> Dict[str, Any]:
         if not isinstance(full_text, str) or not full_text.strip():
@@ -216,16 +306,11 @@ class PlotManager:
             return {"status": "error", "message": str(e)}
 
     # ---------------------------------------------------------
-    # ✅ (기존 기능 2) 파이프라인용 팩트 추출
+    # (기존 기능) 파이프라인용 팩트 추출
     # ---------------------------------------------------------
     def extract_facts(self, episode_no: int, full_text: str, story_state: Dict[str, Any]) -> Dict[str, Any]:
         if self.llm is None:
-            return {
-                "episode_no": int(episode_no),
-                "events": [],
-                "characters": [],
-                "state_changes": {},
-            }
+            return {"episode_no": int(episode_no), "events": [], "characters": [], "state_changes": {}}
 
         prompt = f"""
 Extract facts for consistency check.
@@ -240,119 +325,18 @@ Input:
             raw = getattr(res, "content", str(res))
             data = self._safe_json(raw) or {}
             if not data:
-                return {
-                    "episode_no": int(episode_no),
-                    "events": [],
-                    "characters": [],
-                    "state_changes": {},
-                }
+                return {"episode_no": int(episode_no), "events": [], "characters": [], "state_changes": {}}
+
             data["episode_no"] = int(episode_no)
-
-            # 최소 형태 보정
-            if "events" not in data or not isinstance(data.get("events"), list):
-                data["events"] = []
-            if "characters" not in data or not isinstance(data.get("characters"), list):
-                data["characters"] = []
-            if "state_changes" not in data or not isinstance(data.get("state_changes"), dict):
-                data["state_changes"] = {}
-
+            if "events" not in data: data["events"] = []
+            if "characters" not in data: data["characters"] = []
+            if "state_changes" not in data: data["state_changes"] = {}
             return data
         except Exception:
-            return {
-                "episode_no": int(episode_no),
-                "events": [],
-                "characters": [],
-                "state_changes": {},
-            }
-
-    # ---------------------------------------------------------
-    # ✅ (기존 기능 3 + 개선) 세계관 업데이트 (병합 로직 적용)
-    # ---------------------------------------------------------
-    def update_global_settings(self, text: str) -> Dict[str, Any]:
-        """
-        [업데이트됨] 기존 plot.json 내용을 보존하면서 summary와 genre만 업데이트
-        """
-        if not isinstance(text, str) or not text.strip():
-            return {"status": "error", "message": "empty text"}
-
-        # 1. 요약 및 장르 추출
-        summary = _pick_summary(text)
-
-        allowed_genres = [
-            "로맨스", "로맨스판타지", "현대판타지", "판타지", "무협",
-            "헌터/게이트", "회귀", "빙의", "환생", "이세계",
-            "대체역사", "역사", "추리/미스터리", "스릴러", "공포",
-            "SF", "드라마", "코미디", "액션", "모험", "전쟁",
-            "정치", "의학", "성장", "학원", "서바이벌", "디스토피아"
-        ]
-
-        genre: List[str] = []
-
-        if self.llm is not None:
-            prompt = f"""
-너는 웹소설 편집자다. 아래 글을 읽고 장르를 추측해라.
-[규칙]
-- 출력은 JSON만
-- 키는 "genre" 하나만 (리스트)
-- 반드시 후보에서만 선택
-- 최소 1개, 최대 3개
-- 후보: {allowed_genres}
-
-[텍스트]
-{text[:4500]}
-"""
-            try:
-                res = self.llm.invoke(prompt)
-                raw = getattr(res, "content", str(res))
-                data = self._safe_json(raw) or {}
-                g = data.get("genre", [])
-
-                if isinstance(g, str) and g.strip():
-                    g_list = [g.strip()]
-                elif isinstance(g, list):
-                    g_list = [str(x).strip() for x in g if str(x).strip()]
-                else:
-                    g_list = []
-
-                # 필터링
-                allowed = set(allowed_genres)
-                cleaned = []
-                for x in g_list:
-                    if x in allowed and x not in cleaned:
-                        cleaned.append(x)
-
-                genre = cleaned[:3]
-                if not genre: genre = ["드라마"]
-            except Exception:
-                genre = ["드라마"]
-        else:
-            genre = ["드라마"]
-
-        # =========================================================
-        # [데이터 안전 병합 로직]
-        # =========================================================
-        current_data = _read_json(self.global_setting_file, default={})
-
-        current_data["summary"] = summary
-        current_data["genre"] = genre
-
-        # (선택) 원본 텍스트 미리보기 저장
-        # current_data["last_analysis_preview"] = text[:200]
-
-        try:
-            _write_json(self.global_setting_file, current_data)
-            print(f"🌍 [세계관 설정] 업데이트 완료: {self.global_setting_file}")
-            return {"status": "success", "data": current_data}
-        except Exception as e:
-            print(f"🔥 [세계관 설정] 저장 실패: {e}")
-            return {"status": "error", "message": str(e)}
+            return {"episode_no": int(episode_no), "events": [], "characters": [], "state_changes": {}}
 
 
 class StoryHistoryManager:
-    """
-    기존 코드와의 호환성을 위해 유지
-    """
-
     def __init__(self):
         self.pm = PlotManager()
 
@@ -362,7 +346,7 @@ class StoryHistoryManager:
 
 
 # =========================================================
-# 📢 [신규] ingest_service 연결용 함수 (맨 아래 추가)
+# 📢 ingest_service 연결용 함수
 # =========================================================
 def update_world_setting(text: str) -> Dict[str, Any]:
     """
@@ -371,6 +355,7 @@ def update_world_setting(text: str) -> Dict[str, Any]:
     """
     try:
         manager = PlotManager()
+        # 이제 인자 하나만 넘겨도 내부에서 처리됨 (호환성 패치 적용됨)
         return manager.update_global_settings(text)
     except Exception as e:
         return {"status": "error", "message": str(e)}
