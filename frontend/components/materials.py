@@ -75,6 +75,7 @@ def render_materials():
 
                 # 삭제 버튼
                 if c_btn.button("🗑", key=f"del_m_{sel_mat['id']}"):
+                    requests.delete(f"{BASE_URL}/history/material/{sel_mat['id']}", json=sel_mat)
                     proj['materials'].remove(sel_mat)
                     st.session_state.selected_material_id = None
                     st.toast("자료가 삭제되었습니다.")
@@ -124,7 +125,7 @@ def render_materials():
                 if st.button("💾 저장하기", type="primary", use_container_width=True):
                     try:
                         # 백엔드 API 연결 시 사용 (현재는 세션에만 저장)
-                        # requests.post(f"{BASE_URL}/history/upsert", json=sel_mat)
+                        requests.post(f"{BASE_URL}/history/upsert", json=sel_mat)
                         st.toast("자료가 저장되었습니다!", icon="✅")
                     except Exception as e:
                         st.error(f"저장 중 오류가 발생했습니다: {e}")

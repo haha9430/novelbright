@@ -32,7 +32,7 @@ class ManuscriptAnalyzer:
         self.repo = ManuscriptRepository()
         self.search_tool = TavilySearchResults(k=5, search_depth="advanced")
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=2000,
+            chunk_size=1000,
             chunk_overlap=200,
             separators=["\n\n", "\n", ". ", " ", ""]
         )
@@ -152,55 +152,62 @@ class ManuscriptAnalyzer:
                     "search_source": search_data.get('source', 'Unknown')
                 })
 
-        # 3. 일괄/교차 검증 (Batch Verification)
-        if verification_queue:
-            print(f"🚀 총 {len(verification_queue)}건에 대해 팩트체크를 수행합니다...")
+            # 3. 일괄/교차 검증 (Batch Verification)
+            if verification_queue:
+                print(f"🚀 총 {len(verification_queue)}건에 대해 팩트체크를 수행합니다...")
 
-            BATCH_SIZE = 5
-            for i in range(0, len(verification_queue), BATCH_SIZE):
-                batch_items = verification_queue[i : i + BATCH_SIZE]
-                print(f"   -> Batch {i//BATCH_SIZE + 1} 처리 중...")
+                BATCH_SIZE = 5
+                for i in range(0, len(verification_queue), BATCH_SIZE):
+                    batch_items = verification_queue[i : i + BATCH_SIZE]
+                    print(f"   -> Batch {i//BATCH_SIZE + 1} 처리 중...")
 
-                # 1차 & 2차 검증 수행
-                first_results = self._verify_batch_relevance(batch_items)
-                final_results = self._double_check_batch_results(batch_items, first_results)
+                    # 1차 & 2차 검증 수행
+                    first_results = self._verify_batch_relevance(batch_items)
+                    final_results = self._double_check_batch_results(batch_items, first_results)
 
-                # 결과 매핑
-                for item in batch_items:
-                    item_id = str(item['id'])
+                    # 결과 매핑
+                    for item in batch_items:
+                        item_id = str(item['id'])
 
-                    # 1차, 2차 결과 모두 가져오기
-                    res_1 = first_results.get(item_id, {})
-                    res_2 = final_results.get(item_id, {})
+                        # 1차, 2차 결과 가져오기 (없으면 빈 딕셔너리)
+                        res_1 = first_results.get(item_id, {})
+                        res_2 = final_results.get(item_id, {})
 
-                    # ✅ 고증 오류(is_positive: False)인 경우 리포트
-                    # (2차 검증 결과가 False이면 최종 오류로 간주)
-                    if res_2 and res_2.get('is_relevant') and res_2.get('is_positive') is False:
+                        # 최종 판정 여부 (2차 결과 기준, 없으면 1차 기준, 그것도 없으면 True)
+                        # 디버깅 모드이므로 모든 결과를 담습니다.
+                        final_is_positive = res_2.get('is_positive', res_1.get('is_positive', True))
 
-                        # [변경 포인트] 1차 근거와 2차 근거를 합침
-                        reason_1 = res_1.get('reason', '자료 부족')
-                        reason_2 = res_2.get('reason', '판단 불가')
-
-                        # 보기 좋게 포맷팅
+                        # 근거 합치기
+                        reason_1 = res_1.get('reason', '근거 없음')
+                        reason_2 = res_2.get('reason', '추가 의견 없음')
                         combined_reason = f"[1차 탐지] {reason_1}\n[2차 감수] {reason_2}"
 
+                        # 결과 객체 생성
                         final_obj = {
                             "keyword": item['keyword'],
-                            "reason": combined_reason, # 합쳐진 이유 저장
+                            "is_positive": final_is_positive,  # ✅ 프론트엔드 색상 구분용
+                            "reason": combined_reason,
                             "original_sentence": item['context'],
                             "source": item['search_source'],
                             "start_index": item['item_data'].get('start_index'),
                             "end_index": item['item_data'].get('end_index')
                         }
-                        historical_context.append(final_obj)
-                        print(f"      ❌ [오류 확정] {item['keyword']}")
 
-        return {
-            "total_checked": len(all_query_items),
-            "error_count": len(historical_context),
-            "historical_context": historical_context,
-            "setting_terms_found": list(set(known_settings))
-        }
+                        # 무조건 리스트에 추가 (필터링 제거됨)
+                        historical_context.append(final_obj)
+
+                        # 콘솔 로그에는 구분해서 출력
+                        if final_is_positive:
+                            print(f"      ✅ [통과] {item['keyword']}")
+                        else:
+                            print(f"      ❌ [오류] {item['keyword']}")
+
+            return {
+                "total_checked": len(all_query_items),
+                "error_count": len([i for i in historical_context if not i['is_positive']]), # 오류 개수 별도 계산
+                "historical_context": historical_context, # 모든 결과 반환
+                "setting_terms_found": list(set(known_settings))
+            }
 
     def _extract_search_queries(self, text: str) -> List[Dict[str, str]]:
 
