@@ -68,7 +68,6 @@ def render_characters(proj):
         st.info("등록된 등장인물이 없습니다. 위 버튼을 눌러 추가해주세요.")
         return
 
-    # [통합] 사용자님의 카드형 UI (Grid) 유지
     cols = st.columns(2)
 
     for idx, char in enumerate(proj["characters"]):

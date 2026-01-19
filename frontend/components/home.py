@@ -1,21 +1,29 @@
 import streamlit as st
-from components.common import create_project_modal, edit_project_modal  # edit_project_modal 임포트 추가
+from components.common import create_project_modal, edit_project_modal
 
 
 def render_home():
     # ---------------------------------------------------------
-    # 1. 사이드바
+    # 1. 사이드바 - 아이콘 제거
     # ---------------------------------------------------------
     with st.sidebar:
         st.markdown("### NovellBright")
         st.divider()
-        st.button("🏠 홈", use_container_width=True, type="primary")
-        st.button("📂 내 작품", use_container_width=True)
-        st.button("📰 아티클", use_container_width=True)
+        st.button("홈", use_container_width=True, type="primary")
+        st.button("내 작품", use_container_width=True)
+        st.button("아티클", use_container_width=True)
+
         st.write("")
+        st.write("")
+
         st.caption("설정")
-        st.button("⚙️ 이용 가이드", use_container_width=True)
-        st.button("💬 1:1 문의", use_container_width=True)
+        dark_on = st.toggle("다크 모드", value=st.session_state.get("dark_mode", False))
+        if dark_on != st.session_state.get("dark_mode", False):
+            st.session_state.dark_mode = dark_on
+            st.rerun()
+
+        st.button("이용 가이드", use_container_width=True)
+        st.button("1:1 문의", use_container_width=True)
 
     # ---------------------------------------------------------
     # 2. 메인 헤더
@@ -27,7 +35,8 @@ def render_home():
         st.tabs([f"모든 작품 ({project_count})", "즐겨찾기 (0)"])
 
     with col_btn:
-        if st.button("＋ 새 작품", type="primary", use_container_width=True):
+        # 아이콘 제거
+        if st.button("새 작품", type="primary", use_container_width=True):
             create_project_modal()
 
     st.divider()
@@ -46,21 +55,19 @@ def render_home():
 
     for idx, proj in enumerate(projects):
         with cols[idx % 2]:
-
             with st.container(border=True):
-                # [수정] 카드 상단: 제목 + 수정 버튼(톱니바퀴)
+                # 카드 상단
                 c_head_title, c_head_edit = st.columns([9, 1])
                 with c_head_title:
                     st.subheader(proj['title'])
                 with c_head_edit:
-                    # ⚙️ 버튼 클릭 시 수정 모달 오픈
                     if st.button("⚙️", key=f"edit_btn_{proj['id']}", help="작품 정보 수정"):
                         edit_project_modal(proj)
 
-                # 내부 내용 [이미지 : 텍스트]
+                # 내부 내용
                 c_img, c_text = st.columns([1, 2])
 
-                # (1) 왼쪽: 썸네일 이미지
+                # (1) 썸네일 (아이콘 제거)
                 with c_img:
                     if proj.get("thumbnail"):
                         st.image(proj["thumbnail"], use_container_width=True)
@@ -74,14 +81,16 @@ def render_home():
                                 align-items: center; 
                                 justify-content: center; 
                                 border-radius: 5px;
-                                font-size: 30px;'>
-                                📘
+                                color: #999;
+                                font-weight: bold;
+                                font-size: 14px;'>
+                                No Image
                             </div>
                             """,
                             unsafe_allow_html=True
                         )
 
-                # (2) 오른쪽: 텍스트 정보
+                # (2) 텍스트 정보
                 with c_text:
                     desc = proj.get('desc', '')
                     if len(desc) > 40:
@@ -93,10 +102,10 @@ def render_home():
                         tag_str = " ".join([f"`{t}`" for t in tags])
                         st.markdown(tag_str)
 
-                    st.caption(f"📅 {proj.get('created_at', '2026.01.19')}")
+                    st.caption(f"Created: {proj.get('created_at', '2026.01.19')}")
 
-                # (3) 하단: 작업하기 버튼
-                if st.button("작업하기 ➜", key=f"btn_{proj['id']}", use_container_width=True):
+                # (3) 작업하기 버튼
+                if st.button("작업하기", key=f"btn_{proj['id']}", use_container_width=True):
                     st.session_state.current_project_id = proj["id"]
                     st.session_state.page = "editor"
                     st.rerun()
