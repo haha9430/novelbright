@@ -15,22 +15,22 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 from app.service.clio_fact_checker_agent.repo import ManuscriptRepository
 
 class ManuscriptAnalyzer:
-    def __init__(self, setting_path: str):
-        # 1. LLM 설정 (Solar-pro)
+    def __init__(self, setting_path: str, character_path: str): # [변경] character_path 추가
+        # 1. LLM 설정
         self.llm = ChatUpstage(model="solar-pro")
 
-        # 2. 소설 설정(Plot DB) 로드 -> 허구 정보 필터링용
+        # 2. 설정 파일 로드
+        # plot.json (기존)
         self.settings = self._load_settings(setting_path)
+        # characters.json (신규 추가) -> 여기서 로드합니다.
+        self.character_data = self._load_settings(character_path)
+
+        # 3. 허구/설정 키워드 추출 (두 파일 내용을 합쳐서 필터링 목록 생성)
         self.setting_keywords = self._extract_setting_keywords()
 
-        # 3. 로컬 벡터 DB (기존 지식)
+        # 4. 리포지토리 및 툴 초기화 (기존 동일)
         self.repo = ManuscriptRepository()
-
-        # 4. Web Search 도구 (tavily)
-        # gl='kr': 한국 구글, hl='ko': 한국어 인터페이스 (필요시 'en'으로 변경 가능)
         self.search_tool = TavilySearchResults(k=5, search_depth="advanced")
-
-        # 5. 텍스트 분할기
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=2000,
             chunk_overlap=200,
@@ -47,20 +47,26 @@ class ManuscriptAnalyzer:
             return {}
 
     def _extract_setting_keywords(self) -> Set[str]:
-        """소설 속 허구의 고유명사(등장인물, 지명 등)를 Set으로 추출"""
+        """소설 속 허구의 고유명사 + characters.json의 인물들을 필터링 키워드로 추출"""
         keywords = set()
-        data = self.settings
 
-        # 등장인물 이름
-        for char in data.get("characters", []):
+        # 1. plot.json 데이터 처리 (기존 로직 유지)
+        plot_data = self.settings
+        for char in plot_data.get("characters", []):
             name = char.get("name", "").strip()
             if name: keywords.add(name)
 
-        # 세력/단체명
-        factions = data.get("world_view", {}).get("factions", [])
+        factions = plot_data.get("world_view", {}).get("factions", [])
         for f in factions:
             if isinstance(f, str):
                 keywords.add(f.split("(")[0].strip())
+
+        # 2. [추가] characters.json 데이터 처리
+        # 제공해주신 양식은 {"이름": {상세정보}, ...} 형태의 딕셔너리입니다.
+        if self.character_data:
+            for name_key in self.character_data.keys():
+                # "김태평", "이도훈", "더글러스 헤이그" 등의 키값을 추가
+                keywords.add(name_key.strip())
 
         return keywords
 
@@ -194,12 +200,17 @@ class ManuscriptAnalyzer:
         }
 
     def _extract_search_queries(self, text: str) -> List[Dict[str, str]]:
-        """
-        [NEW] 원자적 명제(Atomic Proposition) 추출 프롬프트
-        """
+
+        # [✅ 여기가 변경 포인트]
+        # 청킹된 text를 받아서 -> 압축(compressed_text) -> LLM 전송
+        compressed_text = self._compress_text(text)
+
+        # 로그로 압축 효과 확인 (선택 사항)
+        # print(f"📉 토큰 압축: {len(text)}자 -> {len(compressed_text)}자")
+
         prompt = """
         당신은 역사 소설의 '미세 고증 감별사'입니다.
-        입력된 텍스트를 분석하여, 역사적 사실 확인이 필요한 **'검증 명제(Proposition)'**들을 추출하세요.
+        입력된 '요약 텍스트'를 보고 역사적 사실 확인이 필요한 **'검증 명제'**를 추출하세요.
 
         [추출 가이드라인]
         1. 단순 단어(예: '총')가 아니라, **"누가/언제/어디서/무엇을 했는가"**가 포함된 구체적 명제로 만드세요.
@@ -224,7 +235,8 @@ class ManuscriptAnalyzer:
         try:
             response = self.llm.invoke([
                 SystemMessage(content=prompt),
-                HumanMessage(content=f"Text: {text[:3500]}")
+                # [✅ 변경] 원본 text 대신 압축된 텍스트 전송
+                HumanMessage(content=f"Text: {compressed_text[:3500]}")
             ])
             return self._parse_json_garbage(response.content)
         except Exception as e:
@@ -514,3 +526,32 @@ class ManuscriptAnalyzer:
             val = res.content.strip().strip('"\'')
             return None if val == "None" or len(val) < 2 else val
         except: return None
+
+    def _compress_text(self, text: str) -> str:
+        """
+        [토큰 절약] KoNLPy(Okt)를 사용하여 조사/구두점 제거 후 핵심 품사만 남김
+        """
+        try:
+            from konlpy.tag import Okt
+            okt = Okt()
+
+            # 살려둘 품사 (명사, 동사, 형용사, 부사, 숫자, 알파벳)
+            # Josa(조사), Punctuation(구두점) 등은 제거됨
+            target_pos = ['Noun', 'Verb', 'Adjective', 'Adverb', 'Number', 'Alpha']
+
+            # 형태소 분석 (stem=True: '먹었다' -> '먹다' 원형 복원)
+            tokens = okt.pos(text, stem=True)
+
+            filtered_words = []
+            for word, pos in tokens:
+                if pos in target_pos:
+                    filtered_words.append(word)
+                # 부정어(Not)는 살려야 고증 오류 방지 가능
+                elif word in ["안", "못", "없다", "아니"]:
+                    filtered_words.append(word)
+
+            return " ".join(filtered_words)
+
+        except Exception as e:
+            print(f"⚠️ 토큰 압축 실패 (KoNLPy 에러): {e}")
+            return text # 실패하면 원문 그대로 반환

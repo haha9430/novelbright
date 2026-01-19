@@ -10,6 +10,9 @@ WORKDIR /app
 # 빌드에 필요한 툴 + uv 설치
 RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential gcc libffi-dev && \
+    g++ \
+    default-jdk \
+    curl \
     pip install --no-cache-dir uv && \
     rm -rf /var/lib/apt/lists/*
 
