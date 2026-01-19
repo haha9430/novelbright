@@ -104,9 +104,8 @@ def render_characters(proj):
                         else:
                             st.error(f"❌ 파일 읽기 실패: {content}")
 
-                    except Exception as e:
-                        # 여기서 'argument should be a str...' 에러가 났던 것입니다.
-                        st.error(f"⚠️ 시스템 오류 발생: {e}")
+                    except Exception as error:
+                        st.error(f"⚠️ 시스템 오류 발생: {error}")
 
     st.divider()
 
