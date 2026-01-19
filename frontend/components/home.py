@@ -1,5 +1,5 @@
 import streamlit as st
-from components.common import create_project_modal
+from components.common import create_project_modal, edit_project_modal  # edit_project_modal 임포트 추가
 
 
 def render_home():
@@ -9,9 +9,9 @@ def render_home():
     with st.sidebar:
         st.markdown("### NovellBright")
         st.divider()
-        st.button("홈", use_container_width=True, type="primary")
-        st.button("내 작품", use_container_width=True)
-        st.button("아티클", use_container_width=True)
+        st.button("🏠 홈", use_container_width=True, type="primary")
+        st.button("📂 내 작품", use_container_width=True)
+        st.button("📰 아티클", use_container_width=True)
         st.write("")
         st.caption("설정")
         st.button("⚙️ 이용 가이드", use_container_width=True)
@@ -24,7 +24,7 @@ def render_home():
     with col_title:
         st.markdown("## 내 작품")
         project_count = len(st.session_state.get('projects', []))
-        st.tabs([f"모든 작품 ({project_count})", "즐겨찾기 (0)"])  # 탭 UI만 표시
+        st.tabs([f"모든 작품 ({project_count})", "즐겨찾기 (0)"])
 
     with col_btn:
         if st.button("＋ 새 작품", type="primary", use_container_width=True):
@@ -33,7 +33,7 @@ def render_home():
     st.divider()
 
     # ---------------------------------------------------------
-    # 3. 프로젝트 리스트 (Streamlit Native Layout)
+    # 3. 프로젝트 리스트
     # ---------------------------------------------------------
     projects = st.session_state.get("projects", [])
 
@@ -45,22 +45,26 @@ def render_home():
     cols = st.columns(2)
 
     for idx, proj in enumerate(projects):
-        # 홀수/짝수 인덱스에 따라 컬럼 선택
         with cols[idx % 2]:
 
-            # ✅ st.container(border=True)를 사용하여 카드 테두리 생성
             with st.container(border=True):
+                # [수정] 카드 상단: 제목 + 수정 버튼(톱니바퀴)
+                c_head_title, c_head_edit = st.columns([9, 1])
+                with c_head_title:
+                    st.subheader(proj['title'])
+                with c_head_edit:
+                    # ⚙️ 버튼 클릭 시 수정 모달 오픈
+                    if st.button("⚙️", key=f"edit_btn_{proj['id']}", help="작품 정보 수정"):
+                        edit_project_modal(proj)
 
-                # 내부를 [이미지 : 텍스트] 비율로 나눔
+                # 내부 내용 [이미지 : 텍스트]
                 c_img, c_text = st.columns([1, 2])
 
                 # (1) 왼쪽: 썸네일 이미지
                 with c_img:
                     if proj.get("thumbnail"):
-                        # 이미지가 있으면 표시
                         st.image(proj["thumbnail"], use_container_width=True)
                     else:
-                        # 이미지가 없으면 기본 아이콘 표시 (회색 박스 느낌)
                         st.markdown(
                             """
                             <div style='
@@ -79,23 +83,16 @@ def render_home():
 
                 # (2) 오른쪽: 텍스트 정보
                 with c_text:
-                    # 제목 (클릭 불가능하므로 텍스트로 표시)
-                    st.subheader(proj['title'])
-
-                    # 설명 (너무 길면 자르기)
                     desc = proj.get('desc', '')
                     if len(desc) > 40:
                         desc = desc[:40] + "..."
                     st.caption(desc if desc else "설명 없음")
 
-                    # 태그 표시 (Badge 스타일)
                     tags = proj.get("tags", [])
                     if tags:
-                        # Streamlit 마크다운으로 태그 느낌 내기 (`태그`)
                         tag_str = " ".join([f"`{t}`" for t in tags])
                         st.markdown(tag_str)
 
-                    # 날짜
                     st.caption(f"📅 {proj.get('created_at', '2026.01.19')}")
 
                 # (3) 하단: 작업하기 버튼
