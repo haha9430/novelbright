@@ -272,26 +272,41 @@ class ManuscriptAnalyzer:
             return None
 
     def _search_web(self, query: str) -> Dict[str, Any]:
-        """Tavily AI 웹 검색"""
+        """Tavily AI 웹 검색 (JSON 파싱 로직 추가)"""
         try:
-            # 검색어 보정 (기존 로직 유지)
+            # 검색어 보정
             if "역사" not in query and "history" not in query.lower():
                 final_query = f"{query} 역사 history"
             else:
                 final_query = query
 
-            # Tavily 검색 실행 (결과는 리스트 형태로 반환됨)
-            # [{'url': '...', 'content': '...'}, ...]
+            # Tavily 검색 실행
             search_results = self.search_tool.run(final_query)
 
             if not search_results:
                 return None
 
+            # 🚨 [수정] 결과가 문자열(JSON)로 오면 리스트로 변환
+            if isinstance(search_results, str):
+                try:
+                    search_results = json.loads(search_results)
+                except json.JSONDecodeError:
+                    # JSON 형식이 아닌 일반 텍스트 에러 메시지일 경우 처리
+                    return None
+
+            # 2차 방어: 리스트가 아닌 경우(예: 에러 메시지 딕셔너리 등) 처리
+            if not isinstance(search_results, list):
+                return None
+
             # 여러 개의 검색 결과 본문을 하나로 합침
             combined_content = "\n\n".join([
-                f"[Source: {res['url']}]\n{res['content']}"
+                f"[Source: {res.get('url', 'Unknown')}]\n{res.get('content', '')}"
                 for res in search_results
+                if isinstance(res, dict) # 딕셔너리인 경우만 처리
             ])
+
+            if not combined_content.strip():
+                return None
 
             return {
                 "keyword": query,
