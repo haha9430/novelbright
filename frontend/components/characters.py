@@ -10,6 +10,7 @@ from components.sidebar import render_sidebar
 from frontend.api import save_character_api
 
 
+
 def _find_project_root() -> Path:
     """
     frontend/components/characters.py 같은 위치에서도

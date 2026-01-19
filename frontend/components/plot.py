@@ -1,36 +1,29 @@
 import json
 from pathlib import Path
-
 import streamlit as st
 
 from components.common import get_current_project
+# render_sidebar는 universe.py에서 부르므로 여기선 import도 필요 없지만, 혹시 모르니 남겨둬도 호출만 안 하면 됨.
 from components.sidebar import render_sidebar
 
-# LLM/정리 저장(가능하면)
-from app.service.story_keeper_agent.load_state.extracter import PlotManager
-
-# LLM이 없거나 실패할 때 로컬 저장(플롯 요약/정리 저장)
-from frontend.api import save_world_setting_api
+# [중요] api.py에서 ingest_file_to_backend 함수 추가 Import
+from api import parse_file_content, _save_world_and_plot_json, save_world_setting_api, ingest_file_to_backend
 
 
 def _project_root() -> Path:
-    # frontend/components/plot.py -> 프로젝트 루트
     return Path(__file__).resolve().parents[2]
 
 
 # -----------------------------
-# story_history 경로 탐색/읽기/쓰기
+# story_history 경로 탐색/읽기/쓰기 (기존 로직 유지)
 # -----------------------------
 def _candidate_history_paths() -> list[Path]:
     root = _project_root()
-
     p1 = root / "app" / "data" / "story_history.json"
     p2 = root / "app" / "data" / "story_history.json"
-
     cwd = Path.cwd()
     p3 = cwd / "app" / "data" / "story_history.json"
     p4 = cwd / "app" / "data" / "story_history.json"
-
     return [p1, p2, p3, p4]
 
 
@@ -45,7 +38,6 @@ def _read_story_history() -> tuple[dict, Path | None]:
     p = _pick_history_path()
     if p is None:
         return {}, None
-
     try:
         with p.open("r", encoding="utf-8") as f:
             data = json.load(f)
@@ -63,27 +55,20 @@ def _write_story_history(path: Path, history: dict) -> None:
 
 
 def _normalize_items(history: dict) -> list[tuple[int, dict, list[str]]]:
-    """
-    episode_no 기준으로 화면에는 1개만 보이게 '갱신' 처리.
-    return: (ep_no, 대표 item, 이 ep_no에 해당하는 원본 key 목록)
-    - 삭제 시 원본 key들을 전부 지워서 중복도 같이 정리
-    """
     by_ep: dict[int, dict] = {}
     keys_by_ep: dict[int, list[str]] = {}
 
     for k, v in history.items():
         if not isinstance(v, dict):
             continue
-
         ep_no = v.get("episode_no")
         if not isinstance(ep_no, int):
             try:
                 ep_no = int(str(k))
             except Exception:
                 continue
-
         keys_by_ep.setdefault(ep_no, []).append(str(k))
-        by_ep[ep_no] = v  # 마지막이 승자 = 갱신
+        by_ep[ep_no] = v
 
     items = sorted(by_ep.items(), key=lambda x: x[0])
     return [(ep_no, item, keys_by_ep.get(ep_no, [])) for ep_no, item in items]
@@ -99,30 +84,13 @@ def _ensure_state():
         st.session_state.world_draft = ""
 
 
-def _save_world_and_plot_json(draft: str) -> tuple[bool, str]:
-    """
-    세계관 텍스트 저장 시 plot.json 쪽(세계관 요약/정리)도 갱신되게 연결.
-    1) PlotManager(LLM) 시도
-    2) 실패하면 save_world_setting_api(로컬)로 폴백
-    """
-    draft = (draft or "").strip()
-    if not draft:
-        return False, "세계관 내용이 비어있음"
-
-    # 2) 로컬 저장(LLM 없어도 동작)
-    try:
-        ok = bool(save_world_setting_api(draft))
-        if ok:
-            return True, ""
-        return False, "plot.json 저장 실패"
-    except Exception as e:
-        return False, f"plot.json 저장 실패: {e}"
-
-
-def render_plot():
+def render_plot(proj=None):  # 유연성을 위해 인자 추가
     _ensure_state()
 
-    proj = get_current_project()
+    # 인자로 안 넘어오면 직접 조회
+    if proj is None:
+        proj = get_current_project()
+
     if not proj:
         st.session_state.page = "home"
         st.rerun()
@@ -132,8 +100,6 @@ def render_plot():
 
     world = proj["world"]
 
-    render_sidebar(proj)
-
     # ------------------ 스타일 ------------------
     st.markdown(
         """
@@ -141,48 +107,58 @@ def render_plot():
         .world-title { margin-bottom: 4px; color: #111; }
         .world-desc-title { margin-top: -6px; color: #111; }
         .section-title { margin-top: 18px; margin-bottom: 6px; color: #111; }
-
         .view-box {
-            white-space: pre-wrap;
-            line-height: 1.75;
-            padding: 14px;
-            border-radius: 12px;
-            border: 1px solid rgba(0,0,0,0.08);
-            background: rgba(0,0,0,0.02);
-            min-height: 120px;
+            white-space: pre-wrap; line-height: 1.75; padding: 14px;
+            border-radius: 12px; border: 1px solid rgba(0,0,0,0.08);
+            background: rgba(0,0,0,0.02); min-height: 120px;
         }
-
         .episode-card {
-            background: #ffffff;
-            border: 1px solid #E6E8F0;
-            border-radius: 12px;
-            padding: 16px 18px;
-            margin-top: 8px;
+            background: #ffffff; border: 1px solid #E6E8F0;
+            border-radius: 12px; padding: 16px 18px; margin-top: 8px;
         }
-
         .episode-header {
-            font-size: 22px;
-            font-weight: 800;
-            color: #2D3436;
-            margin-bottom: 4px;
+            font-size: 22px; font-weight: 800; color: #2D3436; margin-bottom: 4px;
         }
-
         .episode-title {
-            font-size: 16px;
-            font-weight: 700;
-            color: #6C5CE7;
-            margin-bottom: 10px;
+            font-size: 16px; font-weight: 700; color: #6C5CE7; margin-bottom: 10px;
         }
-
         .episode-summary {
-            font-size: 14px;
-            line-height: 1.85;
-            color: #2F3640;
+            font-size: 14px; line-height: 1.85; color: #2F3640;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
+
+    # --------------------------------
+    # [수정됨] 파일로 세계관 분석 요청 (백엔드 Ingest 연결)
+    # --------------------------------
+    with st.expander("📂 파일로 세계관 분석/업데이트"):
+        st.caption("PDF, Word, HWP 파일을 업로드하면 AI가 세계관 요약 및 장르를 분석해 업데이트합니다.")
+
+        uploaded_world = st.file_uploader(
+            "세계관 파일 업로드",
+            type=["txt", "md", "pdf", "docx", "hwp"],
+            key="world_file_uploader"
+        )
+
+        if uploaded_world and st.button("🚀 AI 분석 및 업데이트 시작"):
+            with st.spinner("파일을 읽고 AI가 세계관을 분석 중입니다..."):
+                # 1. 텍스트 추출
+                new_text = parse_file_content(uploaded_world)
+
+                if new_text:
+                    # 2. 백엔드 전송 (type='world')
+                    is_success, msg = ingest_file_to_backend(new_text, "world")
+
+                    if is_success:
+                        st.success(f"✅ {msg}")
+                        # 백엔드가 plot.json을 갱신했으므로, 데이터를 다시 읽어오기 위해 rerun 추천
+                        st.rerun()
+                    else:
+                        st.error(f"❌ 실패: {msg}")
+                else:
+                    st.warning("파일에서 텍스트를 읽을 수 없습니다.")
 
     st.markdown("<h1 class='world-title'>🌍 세계관</h1>", unsafe_allow_html=True)
 
@@ -203,16 +179,14 @@ def render_plot():
                     st.rerun()
             else:
                 c1, c2 = st.columns([1, 1])
-
                 with c1:
                     if st.button("💾 저장", key="world_save_btn", use_container_width=True):
                         draft = (st.session_state.world_draft or "").strip()
-
-                        # 화면에 보이는 텍스트(원문) 저장
                         world["desc"] = draft
 
-                        # plot.json(세계관 요약/정리) 갱신 연결
+                        # api.py의 함수 호출
                         ok, msg = _save_world_and_plot_json(draft)
+
                         if ok:
                             st.toast("저장 완료", icon="✅")
                         else:
