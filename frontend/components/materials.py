@@ -18,126 +18,42 @@ import os
 
 BASE_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
-# =================================================
-# [1] HWPX (신버전, Zip+XML) 텍스트 추출 함수
-# =================================================
-def get_hwpx_text(file_obj):
-    text = ""
-    try:
-        file_obj.seek(0)
-        with zipfile.ZipFile(file_obj) as zf:
-            # HWPX는 내용이 'Contents/sectionX.xml'에 들어있음
-            section_files = sorted(
-                [f for f in zf.namelist() if f.startswith('Contents/section') and f.endswith('.xml')]
-            )
+# HWP 관련 헬퍼 함수들(get_hwp_text, get_hwpx_text)은 이제 다 지우셔도 됩니다.
 
-            if not section_files:
-                return None
-
-            for filename in section_files:
-                xml_data = zf.read(filename)
-                root = ET.fromstring(xml_data)
-
-                # <hp:t> 태그의 텍스트만 추출
-                for neighbor in root.iter():
-                    if neighbor.tag.endswith('}t'):
-                        if neighbor.text:
-                            text += neighbor.text + "\n"
-        return text
-    except Exception:
-        return None
-
-# =================================================
-# [2] HWP (구버전, OLE) 텍스트 추출 함수
-# =================================================
-def get_hwp_text(file_obj):
-    try:
-        file_obj.seek(0)
-        try:
-            f = olefile.OleFileIO(file_obj)
-        except Exception:
-            # OLE 포맷이 아님 -> HWPX일 가능성 높음
-            return None
-
-        dirs = f.listdir()
-
-        # HWP 5.0 구조 확인
-        if ["FileHeader"] not in dirs or ["BodyText"] not in dirs:
-            return None
-
-        sections = [d[1] for d in dirs if d[0] == "BodyText"]
-        text = ""
-
-        for section in sections:
-            try:
-                bodytext = f.openstream("BodyText/" + section).read()
-                # 압축 해제 (zlib)
-                unpacked_data = zlib.decompress(bodytext, -15)
-                decoded_text = unpacked_data.decode('utf-16-le')
-                # 정제
-                text += decoded_text.replace("\r", "\n").replace("\x00", "")
-            except Exception:
-                continue
-
-        return text
-    except Exception:
-        return None
-
-# =================================================
-# [3] 메인 파일 파싱 함수 (스마트 분기 처리)
-# =================================================
 def parse_file_content(uploaded_file):
     """
-    업로드된 파일 객체를 받아 텍스트를 추출하여 반환
+    업로드된 파일 객체를 받아 텍스트를 추출하여 반환 (HWP/HWPX 미지원)
     """
     file_ext = uploaded_file.name.split('.')[-1].lower()
     text = ""
 
     try:
-        uploaded_file.seek(0) # 파일 포인터 초기화
+        uploaded_file.seek(0)
 
         # 1. TXT / MD
         if file_ext in ['txt', 'md']:
             raw_data = uploaded_file.read()
-            try:
-                text = raw_data.decode('utf-8')
-            except UnicodeDecodeError:
-                text = raw_data.decode('euc-kr')
+            try: text = raw_data.decode('utf-8')
+            except UnicodeDecodeError: text = raw_data.decode('euc-kr')
 
         # 2. PDF
         elif file_ext == 'pdf':
             with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
-                for page in doc:
-                    text += page.get_text()
+                for page in doc: text += page.get_text()
             if text: text = re.sub(r'(?<![\.\?\!])\n', ' ', text)
 
         # 3. DOCX
         elif file_ext == 'docx':
             doc = Document(uploaded_file)
-            for para in doc.paragraphs:
-                text += para.text + "\n"
+            for para in doc.paragraphs: text += para.text + "\n"
 
-        # 4. HWP 및 HWPX (확장자가 섞여있을 경우 대비)
-        elif file_ext in ['hwp', 'hwpx']:
-            # 우선 확장자에 맞는거 시도
-            if file_ext == 'hwp':
-                text = get_hwp_text(uploaded_file)
-                # 실패했다면 HWPX일 수 있으므로 재시도
-                if text is None:
-                    text = get_hwpx_text(uploaded_file)
-            else:
-                text = get_hwpx_text(uploaded_file)
-                # 실패했다면 HWP일 수 있으므로 재시도
-                if text is None:
-                    text = get_hwp_text(uploaded_file)
+        # [삭제됨] 4. HWP / HWPX 로직 제거
 
         else:
+            st.error("지원하지 않는 파일 형식입니다.")
             return None
 
-        # [핵심 수정] NoneType 에러 방지 (text가 None이면 바로 리턴)
-        if text is None:
-            return None
-
+        if not text: return None
         return text.strip()
 
     except Exception as e:
@@ -213,7 +129,7 @@ def render_materials():
                 with st.expander("파일에서 내용 불러오기 (HWP, PDF, Word)", expanded=False):
                     uploaded_file = st.file_uploader(
                         "파일을 업로드하면 텍스트를 추출하여 아래 내용에 덮어씁니다.",
-                        type=["txt", "md", "pdf", "docx", "hwp", "hwpx"],
+                        type=["txt", "md", "pdf", "docx"],
                         key="mat_uploader"
                     )
 
