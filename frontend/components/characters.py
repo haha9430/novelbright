@@ -58,34 +58,37 @@ except ImportError as error:
 
 def render_characters(proj):
     """
-    등장인물 관리 탭 UI (팀원 기능 통합 + 카드형 UI 유지 + 아이콘 제거)
+    등장인물 관리 탭 UI (통합 입력 방식 + 오류 해결본)
     """
-    # 🔴 매번 렌더링할 때마다 최신 파일을 읽어오도록 설정합니다.
-    with st.status("render_characters를 시작합니다...", expanded=True) as status:
-        st.write("load_charachters_from_file 호출")
+    # 🔴 데이터 로드 (함수 내부에서 수행하여 proj 변수 인식 보장)
+    with st.status("데이터를 불러오는 중...", expanded=False) as status:
         proj["characters"] = load_characters_from_file()
 
     # 1. 상단 액션 버튼 영역
-    col_add, col_file = st.columns([1, 2], gap="small")
+    col_add, col_file = st.columns([1, 1], gap="small")
 
     with col_add:
-        # 🟢 'pass' 대신 입력 창이 뜨는 popover를 사용합니다.
+        # 🟢 [개선] 통합 입력 방식: 이름만 쓰고 나머지는 한 칸에 다 적기
         with st.popover("➕ 인물 직접 추가", use_container_width=True):
             st.markdown("### 새로운 인물 추가")
             new_name = st.text_input("이름", placeholder="예: 이도훈")
-            new_job = st.text_input("직업/신분", placeholder="예: 대한민국 육군 장교")
-            new_age = st.text_input("나이/성별", placeholder="예: 20대 남성")
 
-            # 버튼 클릭 시 백엔드 API 호출
+            # 현빈님이 원하신 대로 나이/성별 구분 없이 주루루룩 입력받는 칸
+            new_description = st.text_area(
+                "인물 상세 설정",
+                placeholder="나이, 성별, 직업, 특징 등을 자유롭게 나열해서 적어주세요.",
+                height=200
+            )
+
             if st.button("💾 저장하기", use_container_width=True, type="primary"):
                 if not new_name.strip():
                     st.error("이름은 필수입니다!")
                 else:
-                    # 저장할 데이터 구조 생성
+                    # 백엔드 구조에 맞춰 데이터 통합 저장
                     new_data = {
                         "name": new_name,
-                        "job_status": new_job or "none",
-                        "age_gender": new_age or "none",
+                        "job_status": new_description,  # 모든 정보를 여기에 주루루룩 넣음
+                        "age_gender": "integrated",  # 구분하지 않으므로 고정값
                         "core_traits": [],
                         "personality": {"pros": "none", "cons": "none"},
                         "relationships": [],
@@ -95,61 +98,43 @@ def render_characters(proj):
                         "speech_habit": "none"
                     }
 
-                    # api.py에 정의된 save_character_api를 호출합니다.
-                    # 첫 번째 인자는 이름, 두 번째는 데이터 딕셔너리입니다.
                     success = save_character_api(new_name, new_data)
-
                     if success:
                         st.toast(f"✅ {new_name} 추가 완료!", icon="🎉")
-                        st.rerun()  # 👈 저장 즉시 화면을 갱신해서 카드를 띄웁니다.
+                        st.rerun()
                     else:
-                        st.error("서버 저장에 실패했습니다. API 로그를 확인하세요.")
+                        st.error("서버 저장에 실패했습니다.")
 
     with col_file:
-        with st.popover("파일로 일괄 추가", use_container_width=True):
-            st.markdown("PDF, Word, TXT 파일을 지원하며 AI가 인물을 추출합니다.")
-            uploaded_file = st.file_uploader(
-                "파일 선택",
-                type=["txt", "pdf", "docx"],
-                key="char_uploader"
-            )
+        with st.popover("📂 파일로 일괄 추가", use_container_width=True):
+            st.markdown("PDF, TXT 파일을 지원하며 AI가 인물을 추출합니다.")
+            uploaded_file = st.file_uploader("파일 선택", type=["txt", "pdf", "docx"], key="char_uploader")
 
-            # FileProcessor 및 백엔드 전송 로직
-            if uploaded_file and st.button("🚀 파일 처리 및 AI 분석 시작", use_container_width=True):
-                with st.spinner("파일을 읽고 캐릭터를 추출 중입니다..."):
+            if uploaded_file and st.button("🚀 AI 분석 시작", use_container_width=True, type="primary"):
+                with st.spinner("AI가 인물을 분석 중입니다..."):
                     try:
                         import tempfile
-                        # 임시 파일을 생성하여 uploaded_file의 내용을 씁니다.
                         with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{uploaded_file.name}") as tmp_file:
                             tmp_file.write(uploaded_file.getvalue())
                             tmp_path = tmp_file.name
 
-                        # 1. 파일 경로(str)를 전달합니다.
                         content = FileProcessor.load_file_content(tmp_path)
-
-                        # 사용 후 임시 파일 삭제
                         if os.path.exists(tmp_path):
                             os.remove(tmp_path)
 
                         if content and not str(content).startswith("[Error]"):
-                            # [핵심] 성공 여부와 상세 메시지를 동시에 받음
                             success, msg = ingest_file_to_backend(content, "character")
-
                             if success:
-                                st.success(f"✅ {msg}")
+                                st.success("분석 완료!")
                                 st.rerun()
                             else:
-                                st.error(f"❌ 분석 실패: {msg}")
-                        else:
-                            st.error(f"❌ 파일 읽기 실패: {content}")
-
-                    except Exception as error:
-                        # 🟢 아까 해결한 'error' 정의 에러 방지
-                        st.error(f"⚠️ 시스템 오류 발생: {error}")
+                                st.error(f"분석 실패: {msg}")
+                    except Exception as e:
+                        st.error(f"시스템 오류: {e}")
 
     st.divider()
 
-    # 2. 등장인물 리스트 렌더링
+    # 2. 등장인물 리스트 렌더링 (🔴 들여쓰기 수정하여 Unresolved reference 'proj' 해결)
     if "characters" not in proj or not proj["characters"]:
         st.info("등록된 등장인물이 없습니다.")
         return
@@ -160,61 +145,40 @@ def render_characters(proj):
     cols = st.columns(2)
 
     for idx, char in enumerate(proj["characters"]):
-        # 캐릭터 고유 ID 설정
         char_id = char.get("name", f"idx_{idx}")
 
         with cols[idx % 2]:
             with st.container(border=True):
                 c_img, c_info = st.columns([1, 2])
 
-                # (1) 캐릭터 이미지 영역
                 with c_img:
-                    if char.get("image"):
-                        st.image(char["image"], use_container_width=True)
-                    else:
-                        st.markdown(
-                            """
-                            <div style='
-                                background-color: #f0f2f6; 
-                                height: 80px; 
-                                display: flex; 
-                                align-items: center; 
-                                justify-content: center; 
-                                border-radius: 5px;
-                                color: #999;
-                                font-weight: bold;
-                                font-size: 12px;'>
-                                No Img
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
+                    # 이미지 없을 때 No Img 표시
+                    st.markdown(
+                        "<div style='background-color:#f0f2f6;height:80px;display:flex;align-items:center;justify-content:center;border-radius:5px;color:#999;font-size:12px;font-weight:bold;'>No Img</div>",
+                        unsafe_allow_html=True)
 
-                # (2) 캐릭터 정보 & 편집
                 with c_info:
-                    # 🟢 Solar AI가 보내주는 실제 키값(job_status, age_gender)으로 수정했습니다.
-                    st.subheader(char.get("name", "이름 없음"))
-                    role = char.get('job_status', '역할 미정')
-                    age = char.get('age_gender', '정보 없음')
-                    st.caption(f"{role} | {age}")
+                    # 이름과 통합 정보 표시
+                    char_name = char.get("name", "이름 없음")
+                    st.subheader(char_name)
+                    # job_status에 담긴 통합 정보를 요약해서 보여줌
+                    st.caption(char.get('job_status', '정보 없음')[:50] + "...")
 
-                    # 상세 정보 토글
-                    with st.expander("상세 설정"):
-                        new_name = st.text_input("이름", value=char.get("name", ""), key=f"char_name_{char_id}")
-                        new_desc = st.text_area(
-                            "직업/신분",
+                    with st.expander("📝 상세 설정"):
+                        # 수정 시에도 한 칸에서 주루루룩 편집 가능
+                        edited_info = st.text_area(
+                            "인물 설정 내용",
                             value=char.get("job_status", ""),
-                            height=100,
-                            key=f"char_desc_{char_id}"
+                            height=150,
+                            key=f"edit_desc_{char_id}_{idx}"
                         )
 
-                        # 저장 시 API 호출
-                        if st.button("저장", key=f"save_char_{char_id}", use_container_width=True):
-                            save_character_api(new_name, new_desc)  # 백엔드 동기화
-                            st.toast("저장되었습니다.", icon="✅")
+                        if st.button("💾 저장", key=f"save_btn_{idx}", use_container_width=True, type="primary"):
+                            char["job_status"] = edited_info
+                            save_character_api(char_name, char)
+                            st.toast("저장되었습니다!", icon="✅")
                             st.rerun()
 
-                        # 삭제 버튼
-                        if st.button("삭제", key=f"del_char_{char_id}", type="primary", use_container_width=True):
-                            # 삭제 API 로직이 있다면 여기에 추가
+                        if st.button("🗑️ 삭제", key=f"del_btn_{idx}", use_container_width=True):
+                            proj["characters"].pop(idx)
                             st.rerun()
