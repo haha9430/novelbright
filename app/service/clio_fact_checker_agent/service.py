@@ -334,25 +334,49 @@ class ManuscriptAnalyzer:
             return None
 
     def _search_web(self, query: str) -> Dict[str, Any]:
-        """Serper 웹 검색"""
+        """Serper/Tavily 웹 검색 (JSON 파싱 오류 방지 적용)"""
         try:
-            # 검색어에 '역사' 키워드가 없다면 추가 (영어/한글 혼용)
+            # 검색어에 '역사' 키워드가 없다면 추가
             if "역사" not in query and "history" not in query.lower():
                 final_query = f"{query} 역사 history"
             else:
                 final_query = query
 
-            result_text = self.search_tool.run(final_query)
+            # 1. 검색 실행
+            search_results = self.search_tool.run(final_query)
 
-            if not result_text or len(result_text) < 10:
+            if not search_results:
+                return None
+
+            # 🚨 [핵심 수정] 결과가 문자열(JSON)로 오면 리스트로 변환 (이게 없으면 에러남!)
+            if isinstance(search_results, str):
+                try:
+                    search_results = json.loads(search_results)
+                except json.JSONDecodeError:
+                    return None
+
+            # 리스트가 아니면(예: 에러 메시지 딕셔너리 등) 처리 불가
+            if not isinstance(search_results, list):
+                return None
+
+            # 2. 내용 통합
+            # 결과가 리스트인지 확인했으므로 안전하게 반복문 사용 가능
+            combined_content = "\n\n".join([
+                f"[Src: {res.get('url', 'Unknown')}]\n{res.get('content', '')}"
+                for res in search_results
+                if isinstance(res, dict)
+            ])
+
+            if not combined_content.strip():
                 return None
 
             return {
-                "keyword": query, # 검색에 쓴 쿼리 저장
-                "content": result_text,
-                "source": "Web Search (Serper)"
+                "keyword": query,
+                "content": combined_content,
+                "source": "Web Search (Tavily)"
             }
-        except Exception:
+        except Exception as e:
+            print(f"⚠️ 웹 검색 중 오류: {e}")
             return None
 
     def _verify_content_relevance(self, keyword: str, query: str, content: str, context: str) -> Dict[str, Any]:
