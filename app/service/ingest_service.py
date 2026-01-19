@@ -2,26 +2,25 @@ import os
 import sys
 
 # [수정] 폴더 구조에 맞게 경로 수정 (service 추가)
+# [수정] 폴더 구조(app/service/...)에 맞게 경로를 보정합니다.
 try:
-    # app/service/characters 폴더 내의 함수
     from app.service.characters import summarize_character_info
 except ImportError:
-    # 만약 위 경로도 안 된다면 아래 경로 시도
     try:
         from service.characters import summarize_character_info
     except ImportError:
         def summarize_character_info(text):
-            return {"status": "error", "message": "Character Module을 찾을 수 없습니다. 경로를 확인하세요."}
+            return {"status": "error", "message": "Character Module(app.service.characters)을 찾을 수 없습니다."}
 
 try:
-    # [수정] story_keeper_agent 앞에 service. 를 추가해야 함
+    # story_keeper_agent 앞에 service 경로를 추가해야 합니다.
     from app.service.story_keeper_agent.load_state.extracter import update_world_setting
 except ImportError:
     try:
         from service.story_keeper_agent.load_state.extracter import update_world_setting
     except ImportError:
         def update_world_setting(text):
-            return {"status": "error", "message": "World Module을 찾을 수 없습니다. 경로를 확인하세요."}
+            return {"status": "error", "message": "World Module 경로를 확인하세요."}
 
 
 class StoryIngestionService:
