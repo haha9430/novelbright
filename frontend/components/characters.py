@@ -214,7 +214,7 @@ def render_characters(proj):
                             st.toast("저장되었습니다.", icon="✅")
                             st.rerun()
 
-                        # 삭제 버튼 활성화
+                        # 삭제 버튼
                         if st.button("삭제", key=f"del_char_{char_id}", type="primary", use_container_width=True):
                             # 삭제 API 로직이 있다면 여기에 추가
                             st.rerun()
