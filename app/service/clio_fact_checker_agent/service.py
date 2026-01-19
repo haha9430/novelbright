@@ -174,98 +174,111 @@ class ManuscriptAnalyzer:
                             item['original_sentence'] = new_snippet # 업데이트
 
 
-                if start_idx != -1:
-                    actual_found_text = text[start_idx:end_idx]
-
-                    print(f"   📍 위치 발견: {start_idx} ~ {end_idx} (Keyword: {kw})")
-                    print(f"      👉 [검증] 실제 추출된 문장: \"{actual_found_text}\"")
-
-                    item['start_index'] = start_idx
-                    item['end_index'] = end_idx
-                else:
-                    print(f"   ⚠️ 위치 찾기 실패: '{kw}'")
-                    item['start_index'] = -1
-                    item['end_index'] = -1
-
-                # 이미 있는 키워드면 덮어쓰거나 무시 (여기선 최신 쿼리로 갱신)
-                all_query_items[kw] = item
-
-
-
-        print(f"   -> 총 {len(all_query_items)}개의 검색 후보 추출됨")
-
-        known_settings = []     # 소설 설정에 있는 단어 (검색 안 함)
-        historical_context = [] # 최종 결과 리스트
-
-        # 2. 후보군 순회 및 처리
-        for keyword, item_data in all_query_items.items():
-            query_string = item_data['search_query']
-            reason = item_data.get('reason', '')
-            origin_sent = item_data.get('original_sentence', '')
-
-            # [Filter 1] 소설 설정(허구)에 포함되는지 확인
-            # 단순 일치뿐만 아니라 부분 일치도 체크 (예: '에이단' in '에이단 신부님')
-            is_fiction = False
-            for fiction_term in self.setting_keywords:
-                if fiction_term in keyword or keyword in fiction_term:
-                    is_fiction = True
-                    break
-
-            if is_fiction:
-                known_settings.append(keyword)
-                continue # 검색 스킵
-
-            # [Process] 정보 검색 시작
-            print(f"🔍 분석 중: '{keyword}' (Query: {query_string})")
-
-            # Step A: 로컬 DB 확인 (Vector Store)
-            search_data = self._check_local_db(keyword)
-
-            if search_data:
-                print(f"   ✅ 로컬 DB 발견")
-            else:
-                # Step B: 로컬에 없으면 웹 검색 (Serper)
-                search_data = self._search_web(query_string)
-
-            # Step C: [통합 검증 & 팩트체크]
-            # 로컬 DB에서 가져왔든, 웹에서 가져왔든 동일하게 검증을 수행합니다.
-            if search_data:
-                verification = self._verify_content_relevance(
-                    keyword,
-                    query_string,
-                    search_data['content'],
-                    context=origin_sent
-                )
-
-                # 1. 자료 자체가 유의미한지 확인 (Relevant)
-                if verification['is_relevant']:
-                    search_data['is_relevant'] = True
-                    search_data['is_positive'] = verification['is_positive']
-                    search_data['reason'] = verification['reason']
-
-                    # 위치 정보 및 원문 보존
-                    search_data['original_sentence'] = origin_sent
-                    search_data['start_index'] = item_data.get('start_index')
-                    search_data['end_index'] = item_data.get('end_index')
-
-                    historical_context.append(search_data)
-
-                    # 로그 출력
-                    if verification['is_positive']:
-                        print(f"   ✅ 검증 통과: {verification['reason']}")
+                    # 편의상 위치 찾기 로직이 완료되었다고 가정하고 item 업데이트
+                    if start_idx != -1:
+                        item['start_index'] = start_idx
+                        item['end_index'] = end_idx
                     else:
-                        print(f"   ⚠️ 고증 오류 의심: {verification['reason']}")
+                        item['start_index'] = -1
+                        item['end_index'] = -1
 
-                else:
-                    print(f"   🗑️ 관련 없는 자료(검증 탈락): {verification['reason']}")
+                    all_query_items[kw] = item
 
-            time.sleep(0.2) # API 속도 조절
+            print(f"   -> 총 {len(all_query_items)}개의 검색 후보 추출됨")
 
-        return {
-            "found_entities_count": len(all_query_items),
-            "setting_terms_found": list(set(known_settings)), # 중복 제거
-            "historical_context": historical_context
-        }
+            known_settings = []
+            historical_context = []
+
+            # [NEW] 검증 대기열 (검색 결과를 여기다 모음)
+            verification_queue = []
+
+            # --- [2] 검색 수행 (순차 실행) ---
+            for keyword, item_data in all_query_items.items():
+                query_string = item_data['search_query']
+                origin_sent = item_data.get('original_sentence', '')
+
+                # 필터링
+                is_fiction = False
+                for fiction_term in self.setting_keywords:
+                    if fiction_term in keyword or keyword in fiction_term:
+                        is_fiction = True
+                        break
+                if is_fiction:
+                    known_settings.append(keyword)
+                    continue
+
+                print(f"🔍 검색 수행: '{keyword}'")
+
+                # 로컬 DB -> 웹 검색
+                search_data = self._check_local_db(keyword)
+                if not search_data:
+                    search_data = self._search_web(query_string)
+                    time.sleep(0.1) # 텀을 약간 둠
+
+                # [변경점] 검색 결과가 있으면 큐에 추가 (검증은 나중에!)
+                if search_data:
+                    # 나중에 매핑하기 위해 ID 부여
+                    item_id = str(len(verification_queue))
+
+                    # 검증에 필요한 데이터를 패키징
+                    verification_item = {
+                        "id": item_id,
+                        "keyword": keyword,
+                        "query": query_string,
+                        "content": search_data['content'],
+                        "context": origin_sent,
+                        "source": search_data.get('source', 'Unknown'),
+                        # 위치 정보 백업
+                        "start_index": item_data.get('start_index'),
+                        "end_index": item_data.get('end_index')
+                    }
+                    verification_queue.append(verification_item)
+
+            # --- [3] 일괄 검증 (Batch Verification) ---
+            if verification_queue:
+                print(f"🚀 총 {len(verification_queue)}건에 대해 일괄 검증을 수행합니다...")
+
+                BATCH_SIZE = 5 # 5개씩 묶어서 처리
+                for i in range(0, len(verification_queue), BATCH_SIZE):
+                    batch_items = verification_queue[i : i + BATCH_SIZE]
+                    print(f"   -> Batch {i//BATCH_SIZE + 1} 처리 중 ({len(batch_items)}건)...")
+
+                    # [NEW] 배치 검증 메서드 호출
+                    batch_results = self._verify_batch_relevance(batch_items)
+
+                    # 결과 매핑
+                    for item in batch_items:
+                        item_id = item['id']
+                        # LLM 결과 가져오기 (없으면 기본값 실패 처리)
+                        res = batch_results.get(item_id, {"is_relevant": True, "is_positive": True, "reason": "검증 응답 누락"})
+
+                        # 1. 관련성 확인 (관련 없으면 탈락)
+                        if res.get('is_relevant', True):
+                            final_obj = {
+                                "keyword": item['keyword'],
+                                "content": item['content'],
+                                "source": item['source'],
+                                "is_relevant": True,
+                                "is_positive": res.get('is_positive', True),
+                                "reason": res.get('reason', ''),
+                                "original_sentence": item['context'],
+                                "start_index": item['start_index'],
+                                "end_index": item['end_index']
+                            }
+                            historical_context.append(final_obj)
+
+                            if final_obj['is_positive']:
+                                print(f"      ✅ [통과] {item['keyword']}")
+                            else:
+                                print(f"      ❌ [오류] {item['keyword']} ({final_obj['reason']})")
+                        else:
+                            print(f"      🗑️ [무관] {item['keyword']}")
+
+            return {
+                "found_entities_count": len(all_query_items),
+                "setting_terms_found": list(set(known_settings)),
+                "historical_context": historical_context
+            }
 
     def _extract_search_queries(self, text: str) -> List[Dict[str, str]]:
         """
@@ -361,41 +374,48 @@ class ManuscriptAnalyzer:
         except Exception:
             return None
 
-    def _verify_content_relevance(self, keyword: str, query: str, content: str, context: str) -> Dict[str, Any]:
+    def _verify_batch_relevance(self, batch_items: List[Dict]) -> Dict[str, Dict]:
         """
-        [NEW] 검색 결과 검증 + 팩트체크
-        context: 검색을 하게 된 원문 맥락 (예: '조선시대에 감자가 있었는지 확인')
+        [NEW] 여러 항목을 한 번에 검증하는 배치 메서드
         """
+        # 프롬프트에 넣을 항목 리스트 생성
+        items_text = ""
+        for item in batch_items:
+            items_text += f"""
+            ---
+            [ID: {item['id']}]
+            - 검증 명제: {item['keyword']}
+            - 소설 맥락: {item['context']}
+            - 검색 결과: {item['content'][:800]} (너무 길면 자름)
+            """
+
         prompt = f"""
-        당신은 역사 소설의 고증을 담당하는 팩트체커입니다.
+        당신은 역사 소설 팩트체커입니다. 아래 주어진 항목들(ID별)을 검증하세요.
 
-        [상황]
-        작가가 소설을 쓰다가 **"{context}"** 라는 의문을 품고
-        '{keyword}'(쿼리: {query})를 검색하여 아래 결과를 얻었습니다.
-
-        [검색 결과]
-        {content[:1500]}
+        [입력 데이터]
+        {items_text}
 
         [판단 기준]
-        1. **is_relevant (자료 적합성)**: 검색 결과가 '역사/지리/인물' 정보가 맞으면 true. (현대 연예인, 광고면 false)
-        2. **is_positive (사실 일치 여부)**: 
-           - 검색 결과에 비추어 볼 때, 작가의 의도나 묘사가 역사적 사실과 **일치하거나 가능성이 있으면 true**.
-           - 명백한 시대착오(예: 조선시대 커피)거나 **오류라면 false**.
-           - 판단이 불가능하면 true(보류)로 처리.
+        1. **is_relevant**: 검색 결과가 해당 명제를 검증하기에 적절한 역사/지식 자료인가? (광고나 무관한 내용이면 false)
+        2. **is_positive**: 검색 결과에 비추어 볼 때, 소설의 내용이 역사적 사실과 부합하는가? 
+           - 사실과 일치하거나 개연성이 있으면 true.
+           - 명백한 시대착오(예: 조선시대 핸드폰)나 오류면 false.
 
-        결과를 JSON으로 반환하세요:
+        [출력 형식]
+        반드시 **항목의 ID를 키(Key)**로 하는 JSON 객체를 반환하세요.
+        예시:
         {{
-            "is_relevant": true/false,
-            "is_positive": true/false,
-            "reason": "판단의 근거 한 문장 (특히 false일 경우 구체적으로)"
+            "0": {{ "is_relevant": true, "is_positive": false, "reason": "1916년에는 해당 무기가 없었음" }},
+            "1": {{ "is_relevant": true, "is_positive": true, "reason": "당시 기록과 일치함" }}
         }}
         """
+
         try:
             response = self.llm.invoke([SystemMessage(content=prompt)])
             return self._clean_json_string(response.content)
         except Exception as e:
-            # 에러 나면 일단 통과 (False Negative 방지)
-            return {"is_relevant": True, "reason": f"{str(e)}"}
+            print(f"⚠️ 배치 검증 실패: {e}")
+            return {}
 
     def _parse_json_garbage(self, text: str) -> List[Dict]:
         """LLM이 주는 지저분한 JSON 문자열에서 리스트만 추출"""
