@@ -8,13 +8,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # 빌드에 필요한 툴 + uv 설치
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential gcc libffi-dev && \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    libffi-dev \
     g++ \
     default-jdk \
     curl \
-    pip install --no-cache-dir uv && \
-    rm -rf /var/lib/apt/lists/*
+    && pip install --no-cache-dir uv \
+    && rm -rf /var/lib/apt/lists/*
 
 # 의존성 파일만 먼저 복사
 COPY pyproject.toml uv.lock ./
