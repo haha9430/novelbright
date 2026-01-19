@@ -305,41 +305,31 @@ def analyze_clio_api(current_doc, content_source):
 
 
 # =========================================================
-# 7) [NEW] 파일 업로드 통합 처리 (Ingest)
+# 7) [NEW] story keeper 파일 업로드 통합 처리 (Ingest)
 # =========================================================
-def ingest_file_to_backend(text: str, upload_type: str) -> bool:
+def ingest_file_to_backend(text: str, upload_type: str) -> Tuple[bool, str]:
     """
-    프론트엔드에서 파싱된 텍스트를 백엔드(/story/ingest)로 전송합니다.
-    - text: 추출된 본문
-    - upload_type: 'character' 또는 'world'
+    [수정] 단순히 True/False만 주는 게 아니라, 상세 메시지도 함께 리턴합니다.
     """
     if not text.strip():
-        st.warning("추출된 텍스트가 없습니다.")
-        return False
+        return False, "추출된 텍스트가 없습니다."
 
     url = f"{BASE_URL}/story/ingest"
-
-    # JSON 데이터 구성
-    payload = {
-        "text": text,
-        "type": upload_type
-    }
+    payload = {"text": text, "type": upload_type}
 
     try:
-        response = requests.post(url, json=payload)
+        # 타임아웃을 30초로 설정하여 AI 분석 시간을 확보합니다.
+        response = requests.post(url, json=payload, timeout=30)
 
         if response.status_code == 200:
             result = response.json()
             if result.get("status") == "success":
-                st.success(result.get("message", "성공적으로 처리되었습니다."))
-                return True
+                return True, result.get("message", "성공적으로 처리되었습니다.")
             else:
-                st.error(f"처리 실패: {result.get('message')}")
-                return False
+                # 백엔드의 실제 에러 메시지(예: 모듈 로드 실패)를 가져옵니다.
+                return False, result.get("message", "백엔드 분석 실패")
         else:
-            st.error(f"서버 오류 ({response.status_code}): {response.text}")
-            return False
+            return False, f"서버 응답 오류 ({response.status_code}): {response.text}"
 
     except Exception as e:
-        st.error(f"백엔드 연결 실패: {e}")
-        return False
+        return False, f"연결 오류: {str(e)}"
