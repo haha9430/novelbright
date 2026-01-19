@@ -302,3 +302,44 @@ def analyze_clio_api(current_doc, content_source):
             st.error(f"오류: {res.text}")
     except Exception as e:
         st.error(f"연결 실패: {e}")
+
+
+# =========================================================
+# 7) [NEW] 파일 업로드 통합 처리 (Ingest)
+# =========================================================
+def ingest_file_to_backend(text: str, upload_type: str) -> bool:
+    """
+    프론트엔드에서 파싱된 텍스트를 백엔드(/story/ingest)로 전송합니다.
+    - text: 추출된 본문
+    - upload_type: 'character' 또는 'world'
+    """
+    if not text.strip():
+        st.warning("추출된 텍스트가 없습니다.")
+        return False
+
+    url = f"{BASE_URL}/story/ingest"
+
+    # JSON 데이터 구성
+    payload = {
+        "text": text,
+        "type": upload_type
+    }
+
+    try:
+        response = requests.post(url, json=payload)
+
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("status") == "success":
+                st.success(result.get("message", "성공적으로 처리되었습니다."))
+                return True
+            else:
+                st.error(f"처리 실패: {result.get('message')}")
+                return False
+        else:
+            st.error(f"서버 오류 ({response.status_code}): {response.text}")
+            return False
+
+    except Exception as e:
+        st.error(f"백엔드 연결 실패: {e}")
+        return False
