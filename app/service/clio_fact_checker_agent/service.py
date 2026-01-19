@@ -26,7 +26,7 @@ class ManuscriptAnalyzer:
         # 3. 로컬 벡터 DB (기존 지식)
         self.repo = ManuscriptRepository()
 
-        # 4. Web Search 도구 (Serper)
+        # 4. Web Search 도구 (tavily)
         # gl='kr': 한국 구글, hl='ko': 한국어 인터페이스 (필요시 'en'으로 변경 가능)
         self.search_tool = TavilySearchResults(k=5, search_depth="advanced")
 
@@ -164,7 +164,6 @@ class ManuscriptAnalyzer:
                             print(f"      ✅ 재시도 성공! 위치 찾음.")
                             item['original_sentence'] = new_snippet # 업데이트
 
-
                         if start_idx != -1:
                             item['start_index'] = start_idx
                             item['end_index'] = end_idx
@@ -206,7 +205,7 @@ class ManuscriptAnalyzer:
                             # Step B: 웹 검색
                             if not search_data:
                                 search_data = self._search_web(query_string)
-                                time.sleep(0.1) # 검색 API 속도 조절
+                                time.sleep(0.1)  # 검색 API 속도 조절
 
                             # Step C: 검색 결과가 있다면 큐에 적재
                             if search_data:
@@ -214,9 +213,9 @@ class ManuscriptAnalyzer:
                                 verification_queue.append({
                                     "keyword": keyword,
                                     "query": query_string,
-                                    "content": search_data['content'], # 검색된 긴 본문
-                                    "context": origin_sent,            # 소설 속 원문 문장
-                                    "item_data": item_data,            # 원본 아이템 데이터 (위치 정보 등)
+                                    "content": search_data['content'],  # 검색된 긴 본문
+                                    "context": origin_sent,  # 소설 속 원문 문장
+                                    "item_data": item_data,  # 원본 아이템 데이터 (위치 정보 등)
                                     "search_source": search_data.get('source', 'Unknown')
                                 })
 
@@ -228,8 +227,8 @@ class ManuscriptAnalyzer:
                             BATCH_SIZE = 5
 
                             for i in range(0, len(verification_queue), BATCH_SIZE):
-                                batch_items = verification_queue[i : i + BATCH_SIZE]
-                                print(f"   -> Batch {i//BATCH_SIZE + 1} 처리 중 ({len(batch_items)}건)...")
+                                batch_items = verification_queue[i: i + BATCH_SIZE]
+                                print(f"   -> Batch {i // BATCH_SIZE + 1} 처리 중 ({len(batch_items)}건)...")
 
                                 # LLM 호출
                                 verified_results = self._verify_batch_relevance(batch_items)
@@ -370,64 +369,41 @@ class ManuscriptAnalyzer:
             print(f"⚠️ Tavily 검색 중 오류 발생: {e}")
             return None
 
-    def _verify_batch_relevance(self, batch_items: List[Dict]) -> Dict[str, Dict]:
+    def _verify_content_relevance(self, keyword: str, query: str, content: str, context: str) -> Dict[str, Any]:
         """
-        [NEW] 여러 건의 검색 결과를 한 번에 검증하는 함수
+        [NEW] 검색 결과 검증 + 팩트체크
+        context: 검색을 하게 된 원문 맥락 (예: '조선시대에 감자가 있었는지 확인')
         """
-        # 프롬프트 구성을 위해 입력 데이터를 문자열로 변환
-        items_text = ""
-        for idx, item in enumerate(batch_items):
-            items_text += f"""
-            ---
-            [항목 {idx+1}]
-            - 키워드(ID): {item['keyword']}
-            - 소설 속 맥락: {item['context']}
-            - 검색 결과: {item['content'][:800]} ... (생략)
-            """
-
         prompt = f"""
-        당신은 역사 소설 팩트체커입니다. 아래 {len(batch_items)}개의 항목을 검토하여 JSON으로 응답하세요.
+        당신은 역사 소설의 고증을 담당하는 팩트체커입니다.
 
-        [입력 데이터]
-        {items_text}
+        [상황]
+        작가가 소설을 쓰다가 **"{context}"** 라는 의문을 품고
+        '{keyword}'(쿼리: {query})를 검색하여 아래 결과를 얻었습니다.
+
+        [검색 결과]
+        {content[:1500]}
 
         [판단 기준]
-        1. **is_relevant**: 검색 결과가 해당 키워드의 역사/정보 확인에 유효한 자료인가? (광고/무관하면 false)
-        2. **is_positive**: 
-           - 역사적 사실과 일치하거나 개연성이 있으면 true.
-           - 명백한 오류(시대착오 등)면 false.
-           - 판단 보류 시 true.
+        1. **is_relevant (자료 적합성)**: 검색 결과가 '역사/지리/인물' 정보가 맞으면 true. (현대 연예인, 광고면 false)
+        2. **is_positive (사실 일치 여부)**: 
+           - 검색 결과에 비추어 볼 때, 작가의 의도나 묘사가 역사적 사실과 **일치하거나 가능성이 있으면 true**.
+           - 명백한 시대착오(예: 조선시대 커피)거나 **오류라면 false**.
+           - 판단이 불가능하면 true(보류)로 처리.
 
-        [출력 형식]
-        반드시 아래와 같은 **JSON 객체**로 반환하세요. 키(Key)는 각 항목의 '키워드(ID)'여야 합니다.
-
+        결과를 JSON으로 반환하세요:
         {{
-            "키워드1": {{ "is_relevant": true, "is_positive": true, "reason": "근거 요약" }},
-            "키워드2": {{ "is_relevant": false, "is_positive": false, "reason": "관련 없는 자료임" }}
-            ...
+            "is_relevant": true/false,
+            "is_positive": true/false,
+            "reason": "판단의 근거 한 문장 (특히 false일 경우 구체적으로)"
         }}
         """
-
         try:
-            # LLM 호출
             response = self.llm.invoke([SystemMessage(content=prompt)])
-            result_json = self._clean_json_string(response.content)
-
-            # 반환 타입 안전장치 (리스트로 올 경우를 대비해 딕셔너리로 변환 시도)
-            if isinstance(result_json, list):
-                # 만약 LLM이 리스트로 줬다면, 키워드를 찾아 매핑 (불완전할 수 있음)
-                mapped_result = {}
-                for res_item in result_json:
-                    # 응답 안에 keyword가 있다고 가정하거나 순서대로 매핑
-                    # 여기서는 딕셔너리 반환을 강제했으므로 딕셔너리가 아닐 경우 빈값 처리
-                    pass
-                return {} # 구조가 다르면 실패 처리
-
-            return result_json
-
+            return self._clean_json_string(response.content)
         except Exception as e:
-            print(f"⚠️ 배치 검증 중 에러: {e}")
-            return {}
+            # 에러 나면 일단 통과 (False Negative 방지)
+            return {"is_relevant": True, "reason": f"{str(e)}"}
 
     def _parse_json_garbage(self, text: str) -> List[Dict]:
         """LLM이 주는 지저분한 JSON 문자열에서 리스트만 추출"""
