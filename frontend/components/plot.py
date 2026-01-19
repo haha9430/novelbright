@@ -7,7 +7,7 @@ from components.sidebar import render_sidebar
 
 # [중요] 필요한 서비스 및 API 로드
 from app.service.story_keeper_agent.load_state.extracter import PlotManager
-from frontend.api import save_world_setting_api, ingest_file_to_backend # ✅ ingest 함수 추가
+from api import save_world_setting_api, ingest_file_to_backend # ✅ ingest 함수 추가
 from app.common.file_input import FileProcessor # ✅ 텍스트 추출용
 
 def _project_root() -> Path:
