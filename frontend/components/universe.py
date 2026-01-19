@@ -70,7 +70,7 @@ def _render_worldview_tab(proj):
                     content = FileProcessor.load_file_content(tmp_path)
 
                     if content and not content.startswith("[Error]"):
-                        success, msg = ingest_file_to_backend(content, "worldview")
+                        success, msg = ingest_file_to_backend(content, "world")
                         if success:
                             proj["worldview"] = (
                                 proj.get("worldview", "").rstrip()

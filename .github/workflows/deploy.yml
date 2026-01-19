@@ -48,6 +48,8 @@ jobs:
           tags: |
             ghcr.io/${{ env.OWNER_LC }}/moneta-backend:${{ env.IMAGE_TAG }}
             ghcr.io/${{ env.OWNER_LC }}/moneta-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build and push Frontend image
         uses: docker/build-push-action@v5
