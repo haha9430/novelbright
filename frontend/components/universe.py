@@ -1,17 +1,20 @@
 import streamlit as st
 import uuid
+import datetime
+
 from components.common import get_current_project
 from components.sidebar import render_sidebar
 from components.characters import render_characters
 
-# 파일 처리 및 API 모듈 임포트 (characters.py와 동일하게 처리)
 try:
-    from api import ingest_file_to_backend
+    from api import ingest_file_to_backend, get_story_history_api
     from app.common.file_input import FileProcessor
 except ImportError:
     def ingest_file_to_backend(*args, **kwargs):
         return True
 
+    def get_story_history_api(*args, **kwargs):
+        return {}, "ImportError: get_story_history_api"
 
     class FileProcessor:
         @staticmethod
@@ -19,7 +22,6 @@ except ImportError:
 
 
 def render_universe():
-    # 1. 프로젝트 로드
     proj = get_current_project()
     if not proj:
         st.error("프로젝트를 불러올 수 없습니다.")
@@ -27,43 +29,27 @@ def render_universe():
         st.rerun()
         return
 
-    # 사이드바 렌더링
     render_sidebar(proj)
 
-    # 데이터 초기화
-    if "worldview" not in proj: proj["worldview"] = ""
-    # history(연표)는 삭제됨
+    if "worldview" not in proj:
+        proj["worldview"] = ""
 
-    # 2. 헤더
     st.title(f"🌍 {proj['title']} - 설정")
     st.caption("작품의 등장인물, 세계관, 그리고 화별 플롯(요약)을 관리합니다.")
 
-    # ---------------------------------------------------------
-    # 3. 탭 구성 (등장인물 / 세계관 / 플롯)
-    # ---------------------------------------------------------
     tab_char, tab_world, tab_plot = st.tabs(["👤 등장인물", "🗺️ 세계관", "📌 플롯 (요약)"])
 
-    # (1) 등장인물 탭
     with tab_char:
         render_characters(proj)
 
-    # (2) 세계관 탭
     with tab_world:
         _render_worldview_tab(proj)
 
-    # (3) 플롯 탭 (화별 요약)
     with tab_plot:
         _render_plot_tab(proj)
 
 
-# ==============================================================================
-# 내부 렌더링 함수들
-# ==============================================================================
-
 def _render_worldview_tab(proj):
-    """세계관 설정 탭: 텍스트 직접 입력 + 파일 업로드"""
-
-    # [추가됨] 상단: 파일로 세계관 추가하기
     with st.expander("파일로 세계관 자료 추가하기", expanded=False):
         st.markdown("세계관 설정이 담긴 텍스트, PDF 문서를 업로드하여 AI에게 학습시킵니다.")
         uploaded_file = st.file_uploader("파일 선택", type=["txt", "pdf", "docx"], key="world_uploader")
@@ -73,12 +59,9 @@ def _render_worldview_tab(proj):
                 try:
                     content = FileProcessor.load_file_content(uploaded_file)
                     if content and not content.startswith("[Error]"):
-                        # type="worldview" 로 전송
                         success = ingest_file_to_backend(content, "worldview")
                         if success:
                             st.success("세계관 자료가 성공적으로 추가되었습니다!")
-                            # 필요하다면 텍스트 에디터에 내용을 덧붙일 수도 있음
-                            # proj["worldview"] += f"\n\n[파일 추가됨: {uploaded_file.name}]\n{content[:200]}..."
                         else:
                             st.error("서버 전송 실패")
                     else:
@@ -88,7 +71,6 @@ def _render_worldview_tab(proj):
 
     st.divider()
 
-    # 하단: 세계관 텍스트 직접 편집
     st.subheader("세계관 설명 (직접 입력)")
     with st.container(border=True):
         world_text = st.text_area(
@@ -102,38 +84,95 @@ def _render_worldview_tab(proj):
             proj["worldview"] = world_text
 
 
-def _render_plot_tab(proj):
-    """플롯 탭: 각 에피소드(문서)별 AI 요약 출력"""
+def _normalize_history_items(history: dict) -> list[tuple[int, dict]]:
+    by_ep: dict[int, dict] = {}
+    for k, v in (history or {}).items():
+        if not isinstance(v, dict):
+            continue
 
+        ep_no = v.get("episode_no")
+        if not isinstance(ep_no, int):
+            try:
+                ep_no = int(str(k))
+            except Exception:
+                continue
+
+        by_ep[ep_no] = v
+
+    return sorted(by_ep.items(), key=lambda x: x[0])
+
+
+def _fetch_and_cache_history(show_toast: bool = True) -> bool:
+    """
+    GET /story/history 호출해서 세션 캐시에 저장
+    """
+    raw, err = get_story_history_api()
+    if err:
+        if show_toast:
+            st.toast(f"불러오기 실패: {err}", icon="⚠️")
+        return False
+
+    # 백엔드가 {"history": {...}}로 주는 경우 / dict 그대로 주는 경우 둘 다 처리
+    history = raw.get("history") if isinstance(raw, dict) and "history" in raw else raw
+    if not isinstance(history, dict):
+        history = {}
+
+    st.session_state.story_history_cache = history
+    st.session_state.story_history_last_fetch = datetime.datetime.now().strftime("%H:%M:%S")
+
+    if show_toast:
+        st.toast("히스토리 불러오기 완료", icon="✅")
+    return True
+
+
+def _render_plot_tab(proj):
     st.subheader("스토리 요약")
     st.caption("각 화의 내용이 자동으로 요약되어 표시되는 공간입니다.")
 
-    docs = proj.get("documents", [])
+    if "story_history_cache" not in st.session_state:
+        st.session_state.story_history_cache = {}
+    if "story_history_last_fetch" not in st.session_state:
+        st.session_state.story_history_last_fetch = ""
 
-    if not docs:
-        st.info("아직 생성된 문서(에피소드)가 없습니다.")
+    # ✅ 히스토리 불러오기 버튼
+    c1, c2 = st.columns([8.5, 1.5], vertical_alignment="bottom")
+    with c1:
+        st.empty()
+    with c2:
+        if st.button("📥 히스토리 불러오기", use_container_width=True, key="history_reload_btn"):
+            _fetch_and_cache_history(show_toast=True)
+            st.rerun()
+
+    # ✅ 처음 들어오면 자동 1회 로드
+    if not st.session_state.story_history_cache:
+        _fetch_and_cache_history(show_toast=False)
+
+    history = st.session_state.story_history_cache or {}
+    last_fetch = st.session_state.story_history_last_fetch or ""
+
+    if not history:
+        st.info("아직 요약 히스토리가 없습니다.")
+        if last_fetch:
+            st.caption(f"마지막 불러오기: {last_fetch}")
         return
 
-    # 각 문서(에피소드)를 순회하며 요약 표시
-    for i, doc in enumerate(docs):
-        # 문서에 summary 필드가 없으면 초기화
-        if "summary" not in doc:
-            doc["summary"] = ""
+    st.caption(f"마지막 불러오기: {last_fetch}")
+
+    items = _normalize_history_items(history)
+
+    # ✅ 에피소드별 요약 렌더
+    for ep_no, item in items:
+        title = str(item.get("title", "")).strip()
+        summary = str(item.get("summary", "")).strip()
 
         with st.container(border=True):
-            # 헤더: 문서 제목
-            st.markdown(f"#### 📄 {doc['title']}")
+            st.markdown(f"#### 📄 {ep_no}화" + (f" — {title}" if title else ""))
 
-            # 내용: 요약문 (백엔드 출력용이므로 보통 읽기 전용 느낌이지만, 수정 가능하게 배치)
-            # 만약 백엔드 연동이 되면 여기에 doc['summary']가 자동으로 채워져 있을 것임.
-            summary_text = st.text_area(
+            st.text_area(
                 label="AI 요약 내용",
-                value=doc["summary"],
+                value=summary,
                 height=150,
-                key=f"plot_summary_{doc['id']}",
-                placeholder="아직 요약된 내용이 없습니다. (글을 작성하면 AI가 자동으로 요약합니다)"
+                key=f"history_summary_view_{ep_no}",
+                disabled=True,
+                placeholder="요약이 없습니다."
             )
-
-            # 수정 사항 저장
-            if summary_text != doc["summary"]:
-                doc["summary"] = summary_text
