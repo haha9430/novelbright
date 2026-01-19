@@ -34,9 +34,14 @@ COPY . .
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    JAVA_HOME="/usr/lib/jvm/default-java"
 
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    default-jre \
+    && rm -rf /var/lib/apt/lists/*
 
 # 보안을 위한 non-root 사용자
 RUN useradd -m appuser
