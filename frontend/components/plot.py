@@ -4,7 +4,7 @@ import streamlit as st
 from components.common import get_current_project
 from components.sidebar import render_sidebar
 
-from api import save_world_setting_api, ingest_file_to_backend
+from api import save_world_setting_api, ingest_file_to_backend, get_world_setting_api
 from app.common.file_input import FileProcessor
 
 
@@ -13,6 +13,8 @@ def _ensure_state():
         st.session_state.world_edit_mode = False
     if "world_draft" not in st.session_state:
         st.session_state.world_draft = ""
+    if "world_loaded_from_backend" not in st.session_state:
+        st.session_state.world_loaded_from_backend = False
 
 
 def _save_world_and_plot_json(draft: str) -> tuple[bool, str]:
@@ -28,6 +30,27 @@ def _save_world_and_plot_json(draft: str) -> tuple[bool, str]:
         return False, f"plot.json 저장 실패: {e}"
 
 
+def _pull_world_raw_into_view(world: dict, show_toast: bool = False) -> None:
+    plot, err = get_world_setting_api()
+    if err:
+        if show_toast:
+            st.toast(f"세계관 불러오기 실패: {err}", icon="⚠️")
+        return
+
+    raw = str(plot.get("world_raw", "") or "").strip()
+    if raw:
+        world["desc"] = raw
+        if show_toast:
+            st.toast("plot.json에서 세계관 원문 불러옴", icon="✅")
+    else:
+        # raw가 없으면 요약이라도
+        summary = plot.get("summary")
+        if isinstance(summary, list) and summary:
+            world["desc"] = "\n".join([str(x) for x in summary if str(x).strip()]).strip()
+            if show_toast:
+                st.toast("plot.json에서 세계관 요약 불러옴", icon="✅")
+
+
 def render_plot():
     _ensure_state()
     proj = get_current_project()
@@ -41,6 +64,11 @@ def render_plot():
     world = proj["world"]
 
     render_sidebar(proj)
+
+    # ✅ 최초 1회: plot.json에서 world_raw를 가져와 desc에 채움
+    if not st.session_state.world_loaded_from_backend:
+        _pull_world_raw_into_view(world, show_toast=False)
+        st.session_state.world_loaded_from_backend = True
 
     st.markdown(
         """
@@ -69,6 +97,8 @@ def render_plot():
                     if text and not text.startswith("[Error]"):
                         ok, msg = ingest_file_to_backend(text, "world")
                         if ok:
+                            # ✅ 저장됐으니 바로 plot.json에서 원문 다시 끌어와서 화면 반영
+                            _pull_world_raw_into_view(world, show_toast=True)
                             st.rerun()
                         else:
                             st.error(msg)
@@ -94,6 +124,8 @@ def render_plot():
                         ok, msg = _save_world_and_plot_json(draft)
                         if ok:
                             st.toast("저장 완료", icon="✅")
+                            # 저장 성공하면 plot.json에서 다시 읽어와 동기화
+                            _pull_world_raw_into_view(world, show_toast=False)
                         else:
                             st.toast(f"저장 실패: {msg}".strip(), icon="⚠️")
                         st.session_state.world_edit_mode = False

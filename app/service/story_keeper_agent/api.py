@@ -26,7 +26,6 @@ manager = PlotManager()
 
 
 def _project_root() -> Path:
-    # extracter.py랑 동일한 기준(루트 기준)으로 맞춤
     return Path(__file__).resolve().parents[3]
 
 
@@ -132,6 +131,22 @@ def get_story_history():
         raise HTTPException(status_code=500, detail=f"history load failed: {e}")
 
 
+# ✅ 추가: plot.json(세계관 원문/요약) 읽기 API
+@router.get(
+    "/world_setting",
+    summary="World/Plot Setting (Read)",
+    description="app/data/plot.json을 그대로 반환",
+)
+def get_world_setting():
+    try:
+        plot = _load_plot_config()
+        if not isinstance(plot, dict):
+            plot = {}
+        return {"plot": plot}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"plot load failed: {e}")
+
+
 @router.post(
     "/world_setting",
     summary="World/Plot Setting",
@@ -141,7 +156,6 @@ def world_setting(text: str = Body(..., media_type="text/plain")):
     return manager.update_global_settings(text)
 
 
-# ✅ 추가: 파일 업로드(텍스트) ingest 엔드포인트
 class IngestRequest(BaseModel):
     text: str
     type: str  # "world" / "worldview" / etc
@@ -160,10 +174,7 @@ def ingest(payload: IngestRequest):
         if not text:
             return {"status": "error", "message": "empty text"}
 
-        # 세계관/설정 파일 업로드 케이스
         if upload_type in ("world", "worldview"):
-            # 여기서 요약+plot.json 저장이 update_global_settings 내부에서 이뤄져야 함
-            # (너가 extracter에서 만든 '요약해서 plot.json 저장' 로직이 여기로 연결되는 구조)
             res = manager.update_global_settings(text)
             return {"status": "success", "message": "world ingested", "data": res}
 
