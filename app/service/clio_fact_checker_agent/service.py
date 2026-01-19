@@ -201,35 +201,50 @@ class ManuscriptAnalyzer:
 
     def _extract_search_queries(self, text: str) -> List[Dict[str, str]]:
         """
-        [Simple Version] 복잡한 원자적 명제 분해 없이,
-        역사적 사실 확인이 필요한 '키워드'나 '문장'을 단순 추출합니다.
+        [수정됨] 단순 명사가 아닌 '역사적 사실 관계(명제)'와 '시대적 정합성'을 검증하는 쿼리 생성기
         """
         prompt = """
-        당신은 역사 소설 팩트체커입니다.
-        입력된 텍스트에서 **역사적 고증이 필요한 핵심 키워드나 사건**을 추출하세요.
+        당신은 역사 소설의 고증 오류를 찾아내는 '팩트체크 쿼리 설계자'입니다.
+        단순한 고유명사 추출이 아니라, **"이 내용이 역사적으로 가능한가?"**를 검증하기 위한 **명제(Proposition)와 맥락**을 추출하세요.
 
-        [추출 기준]
-        1. 쪼개거나 변형하지 말고, 원문의 내용을 바탕으로 검증이 필요한 대상을 있는 그대로 추출하세요.
-        2. 고유명사, 연도, 무기 이름, 사건, 복식 등이 포함된 문장을 주목하세요.
+        [추출 기준: 무엇을 검증해야 하는가?]
+        1. **행위와 사건의 사실성 (Historical Plausibility):**
+           - 실존 인물이 해당 시점에 그 장소에 있었거나, 그 행동을 했는지.
+        2. **시대적 불일치 (Anachronism):**
+           - 등장한 물건, 용어, 개념이 해당 시대에 존재했는지.
+        3. **문화/제도적 배경 (Cultural Context):**
+           - 의복, 식사, 의료 행위, 법률 등이 당시 고증에 맞는지.
 
-        [출력 형식 (JSON List Only)]
+        [제외 대상 (Negative Rules)]
+        - 역사적 맥락이 없는 단순한 일상 묘사 (예: "밥을 먹었다", "잠을 잤다").
+        - 수식어가 없는 일반 명사 단독 추출 금지 (예: '병원', '사람', '하늘' -> 절대 금지).
+        - **반드시 '검증이 필요한 구체적 서술'이 포함된 경우만 추출.**
+
+        [출력 형식]
+        반드시 아래와 같은 **JSON 리스트**만 출력하세요.
         [
             {
-                "keyword": "검증 대상 (예: 1916년 독일군 방독면)",
-                "original_sentence": "원문 문장 그대로",
-                "search_query": "검색어 (예: 1916 German gas mask history)"
+                "keyword": "검증 대상 (짧은 구 혹은 주어+서술어 요약)",
+                "original_sentence": "본문에서 토씨 하나 안 바꾸고 그대로 복사한 문장 전체",
+                "search_query": "구글/위키피디아 검색을 위한 쿼리 (시대 키워드 포함)",
+                "reason": "이 항목을 역사적으로 검증해야 하는 구체적인 이유"
             }
         ]
         """
+
         try:
-            # [중요] 토큰 압축(_compress_text) 없이 원문 그대로 전달
+            # LLM에게 텍스트 전달
             response = self.llm.invoke([
                 SystemMessage(content=prompt),
-                HumanMessage(content=f"Text: {text[:4000]}")
+                HumanMessage(content=f"Text: {text[:3500]}") # 문맥 파악을 위해 길이 약간 늘림
             ])
-            return self._parse_json_garbage(response.content)
+            content = response.content.strip()
+
+            # JSON 파싱
+            return self._parse_json_garbage(content)
+
         except Exception as e:
-            print(f"⚠️ 추출 에러: {e}")
+            print(f"⚠️ 쿼리 생성 에러: {e}")
             return []
 
     def _check_local_db(self, keyword: str) -> Dict[str, Any]:
