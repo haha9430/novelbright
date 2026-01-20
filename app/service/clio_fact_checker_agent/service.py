@@ -62,23 +62,21 @@ class ManuscriptAnalyzer:
                 keywords.add(f.split("(")[0].strip())
 
         # 2. [추가] characters.json 데이터 처리
-        # 제공해주신 양식은 {"이름": {상세정보}, ...} 형태의 딕셔너리입니다.
         if self.character_data:
             for name_key in self.character_data.keys():
-                # "김태평", "이도훈", "더글러스 헤이그" 등의 키값을 추가
                 keywords.add(name_key.strip())
 
         return keywords
 
     def analyze_manuscript(self, text: str) -> Dict[str, Any]:
         """
-        [수정됨] 들여쓰기 오류 수정 및 리스트 변환
+        [수정됨] 1차(탐지) + 2차(감수) 의견 동시 리포팅 버전
         """
         print(f"📄 원고 분석 시작 (총 {len(text)}자)")
 
         chunks = self.text_splitter.split_text(text)
 
-        # [수정 1] 딕셔너리 대신 리스트 사용 (중복 방지)
+        # 1. 텍스트 분할 및 명제(Query) 추출
         all_query_items = []
 
         for i, chunk in enumerate(chunks):
@@ -88,14 +86,14 @@ class ManuscriptAnalyzer:
                 kw = item['keyword']
                 origin_snippet = item.get('original_sentence', '')
 
-                # 1. 위치 찾기 시도
+                # 위치 찾기 로직
                 start_idx, end_idx = self._find_exact_position(
                     full_text=text,
                     target_snippet=origin_snippet,
                     start_from=0
                 )
 
-                # 내부 헬퍼 함수
+                # 내부 헬퍼 함수 정의
                 def _is_content_equal(text1, text2):
                     def normalize(s): return re.sub(r'[\s\W_]+', '', s)
                     return normalize(text1) == normalize(text2)
@@ -108,28 +106,22 @@ class ManuscriptAnalyzer:
                         return None if val == "None" or len(val) < 2 else val
                     except: return None
 
-                # 2. 내용 일치 여부 확인
+                # 위치 검증 및 재시도 로직
                 is_match_success = False
                 if start_idx != -1:
                     actual_found_text = text[start_idx:end_idx]
-                    if actual_found_text == origin_snippet:
-                        is_match_success = True
-                    elif _is_content_equal(actual_found_text, origin_snippet):
+                    if actual_found_text == origin_snippet or _is_content_equal(actual_found_text, origin_snippet):
                         is_match_success = True
 
-                # 3. [재시도 로직] (실패한 경우에만 진입)
                 if start_idx == -1 or (start_idx != -1 and not is_match_success):
-                    print(f"   🔄 [재시도] '{kw}' 위치 재탐색...")
+                    # print(f"   🔄 [재시도] '{kw}' 위치 재탐색...")
                     new_snippet = _retry_extract_sentence(chunk, kw)
                     if new_snippet:
                         start_idx, end_idx = self._find_exact_position(text, new_snippet, 0)
                         if start_idx != -1:
                             item['original_sentence'] = new_snippet
 
-                # -------------------------------------------------------------
-                # 🚨 [핵심 수정] 들여쓰기를 왼쪽으로 당겨서 if문 밖으로 뺐습니다!
-                # 이제 성공하든 실패하든 무조건 실행되어 결과가 저장됩니다.
-                # -------------------------------------------------------------
+                # 결과 저장 (실패했더라도 start_idx=-1로 저장)
                 if start_idx != -1:
                     item['start_index'] = start_idx
                     item['end_index'] = end_idx
@@ -137,7 +129,6 @@ class ManuscriptAnalyzer:
                     item['start_index'] = -1
                     item['end_index'] = -1
 
-                # [수정 2] 리스트에 추가 (Append)
                 all_query_items.append(item)
 
         print(f"   -> 총 {len(all_query_items)}개의 검색 후보 추출됨")
@@ -146,13 +137,13 @@ class ManuscriptAnalyzer:
         historical_context = []
         verification_queue = []
 
-        # --- [Step 2] 검색 수행 ---
+        # 2. 검색 수행 (Search)
         for item_data in all_query_items:
             keyword = item_data['keyword']
             query_string = item_data['search_query']
             origin_sent = item_data.get('original_sentence', '')
 
-            # 필터링
+            # 허구 필터링
             is_fiction = False
             for fiction_term in self.setting_keywords:
                 if fiction_term in keyword or keyword in fiction_term:
@@ -165,7 +156,6 @@ class ManuscriptAnalyzer:
 
             print(f"🔍 검색 수행: '{keyword}'")
 
-            # 로컬 DB -> 웹 검색
             search_data = self._check_local_db(keyword)
             if not search_data:
                 search_data = self._search_web(query_string)
@@ -173,8 +163,7 @@ class ManuscriptAnalyzer:
 
             if search_data:
                 item_id = str(len(verification_queue))
-
-                verification_item = {
+                verification_queue.append({
                     "id": item_id,
                     "keyword": keyword,
                     "query": query_string,
@@ -183,45 +172,62 @@ class ManuscriptAnalyzer:
                     "source": search_data.get('source', 'Unknown'),
                     "start_index": item_data.get('start_index'),
                     "end_index": item_data.get('end_index')
-                }
-                verification_queue.append(verification_item)
+                })
 
-        # --- [Step 3] 일괄 검증 ---
+        # 3. 일괄/교차 검증 (Batch Verification)
         if verification_queue:
-            print(f"🚀 총 {len(verification_queue)}건에 대해 일괄 검증을 수행합니다...")
+            print(f"🚀 총 {len(verification_queue)}건에 대해 2단계(교차) 검증을 수행합니다...")
 
             BATCH_SIZE = 5
             for i in range(0, len(verification_queue), BATCH_SIZE):
                 batch_items = verification_queue[i : i + BATCH_SIZE]
                 print(f"   -> Batch {i//BATCH_SIZE + 1} 처리 중 ({len(batch_items)}건)...")
 
-                batch_results = self._verify_batch_relevance(batch_items)
+                # [1차] 기본 검증 수행
+                first_results = self._verify_batch_relevance(batch_items)
 
+                # [2차] 교차 검증 수행 (1차 결과를 입력으로 넣음)
+                final_results = self._double_check_batch_results(batch_items, first_results)
+
+                # 결과 매핑 및 합치기
                 for item in batch_items:
                     item_id = item['id']
-                    res = batch_results.get(item_id, batch_results.get(int(item_id), {}))
 
-                    if not res:
-                        res = {"is_relevant": True, "is_positive": True, "reason": "검증 응답 누락"}
+                    # 1차, 2차 결과 개별 추출
+                    res_1 = first_results.get(item_id, {})
+                    res_2 = final_results.get(item_id, {})
 
-                    if res.get('is_relevant', True):
+                    # [관련성 판단] 2차가 있으면 2차 기준, 없으면 1차 기준
+                    is_relevant = res_2.get('is_relevant', res_1.get('is_relevant', True))
+
+                    if is_relevant:
+                        # [최종 승인 여부] 2차 결과 우선 (없으면 1차, 둘 다 없으면 True)
+                        final_is_positive = res_2.get('is_positive', res_1.get('is_positive', True))
+
+                        # [핵심] 1차 이유와 2차 이유를 합침
+                        reason_1 = res_1.get('reason', '1차 의견 없음')
+                        reason_2 = res_2.get('reason', '2차 의견 없음')
+
+                        # 보기 좋게 포맷팅
+                        combined_reason = f"🔹[1차 탐지] {reason_1}\n🔸[2차 감수] {reason_2}"
+
                         final_obj = {
                             "keyword": item['keyword'],
                             "content": item['content'],
                             "source": item['source'],
                             "is_relevant": True,
-                            "is_positive": res.get('is_positive', True),
-                            "reason": res.get('reason', ''),
+                            "is_positive": final_is_positive, # 판정은 2차 기준
+                            "reason": combined_reason,        # 이유는 둘 다 표시
                             "original_sentence": item['context'],
                             "start_index": item['start_index'],
                             "end_index": item['end_index']
                         }
                         historical_context.append(final_obj)
 
-                        if final_obj['is_positive']:
+                        if final_is_positive:
                             print(f"      ✅ [통과] {item['keyword']}")
                         else:
-                            print(f"      ❌ [오류] {item['keyword']} ({final_obj['reason']})")
+                            print(f"      ❌ [오류] {item['keyword']}")
                     else:
                         print(f"      🗑️ [무관] {item['keyword']}")
 
@@ -326,10 +332,7 @@ class ManuscriptAnalyzer:
             return None
 
     def _verify_batch_relevance(self, batch_items: List[Dict]) -> Dict[str, Dict]:
-        """
-        [NEW] 여러 항목을 한 번에 검증하는 배치 메서드
-        """
-        # 프롬프트에 넣을 항목 리스트 생성
+        """[1차] 기본 검증"""
         items_text = ""
         for item in batch_items:
             items_text += f"""
@@ -367,6 +370,55 @@ class ManuscriptAnalyzer:
         except Exception as e:
             print(f"⚠️ 배치 검증 실패: {e}")
             return {}
+
+    def _double_check_batch_results(self, batch_items: List[Dict], first_results: Dict) -> Dict[str, Dict]:
+        """
+        [NEW] 2차 검증 (교차 검증)
+        1차 검증 결과를 바탕으로 '최종 감수관' 페르소나가 한 번 더 확인합니다.
+        """
+        audit_payload = ""
+        for item in batch_items:
+            item_id = item['id']
+            # 1차 결과 가져오기
+            f_res = first_results.get(item_id, {})
+            f_is_positive = f_res.get('is_positive', True)
+            f_reason = f_res.get('reason', '판단 보류')
+
+            audit_payload += f"""
+            ---
+            [ID: {item_id}]
+            - 검증 명제: {item['keyword']}
+            - 검색 증거: {item['content'][:500]}
+            - 1차 판정: {'[승인]' if f_is_positive else '[오류/거부]'} (이유: {f_reason})
+            """
+
+        prompt = f"""
+        당신은 역사 팩트체크 팀의 **'수석 감수관'**입니다.
+        앞선 1차 검증 결과가 타당한지 비판적으로 재검토하여 최종 결론을 내리세요.
+
+        [입력 데이터]
+        {audit_payload}
+
+        [임무]
+        1. 1차 판정이 검색 증거와 맥락에 비추어 올바른지 판단하세요.
+        2. 특히 **'오류(False)'로 판정된 건이 진짜 오류인지**, 아니면 허용 가능한 범위인지 신중히 확인하세요.
+        3. 만약 1차 판정이 틀렸다고 생각되면 바로잡으세요.
+
+        [출력 형식]
+        반드시 **항목의 ID를 키(Key)**로 하는 JSON 객체를 반환하세요.
+        예시:
+        {{
+            "0": {{ "is_relevant": true, "is_positive": false, "reason": "최종 검토 결과, 1차 판정이 맞습니다. 1916년에는 존재하지 않았습니다." }},
+            "1": {{ "is_relevant": true, "is_positive": true, "reason": "1차 판정 수정: 해당 용어는 당시에도 드물게 사용되었습니다." }}
+        }}
+        """
+
+        try:
+            response = self.llm.invoke([SystemMessage(content=prompt)])
+            return self._clean_json_string(response.content)
+        except Exception as e:
+            print(f"⚠️ 2차 교차 검증 실패: {e}")
+            return first_results # 실패 시 1차 결과 그대로 반환
 
     def _parse_json_garbage(self, text: str) -> List[Dict]:
         """LLM이 주는 지저분한 JSON 문자열에서 리스트만 추출"""
