@@ -21,28 +21,29 @@ def load_characters_from_file():
         from api import get_characters_api
         data = get_characters_api()
 
-        # 🔴 수정 핵심: 데이터가 없거나, 비어있는 리스트/딕셔너리면 즉시 빈 값 반환
-        if not data or (isinstance(data, (list, dict)) and len(data) == 0):
+        # 데이터가 None이거나 비어있으면 즉시 빈 값 반환
+        if not data or not isinstance(data, (list, dict)) or len(data) == 0:
             return []
 
-        # 유효한 캐릭터 데이터(이름이 있는 경우)가 하나라도 있는지 확인
+        # 유효한 캐릭터 데이터(이름이 있는 경우) 필터링
         valid_chars = []
         if isinstance(data, list):
-            valid_chars = [c for c in data if isinstance(c, dict) and c.get("name")]
+            valid_chars = [c for c in data if isinstance(c, dict) and c.get("name") and str(c.get("name")).strip()]
         elif isinstance(data, dict):
-            valid_chars = [v for v in data.values() if isinstance(v, dict) and v.get("name")]
+            valid_chars = [v for v in data.values() if
+                           isinstance(v, dict) and v.get("name") and str(v.get("name")).strip()]
 
-        # 유효한 데이터가 정말 있을 때만 상태창을 띄우고 데이터 반환
+        # 유효한 데이터가 있을 때만 상태창 노출
         if valid_chars:
             with st.status("load_characters_from_flie 데이터 확인 중...", expanded=False) as status:
-                st.write(data)
+                st.write(valid_chars)
                 status.update(label="✅ 데이터 로드 성공", state="complete")
             return valid_chars
 
     except Exception as e:
         print(f"⚠️ API 호출 실패, 로컬 파일 시도: {e}")
 
-    # [Fallback] API 실패 시 로컬 파일 직접 읽기
+    # 🟢 [Fallback] API 실패 시 로컬 파일 직접 읽기 (이 부분이 함수 안에 있어야 함)
     file_path = "/app/app/data/characters.json"
     if os.path.exists(file_path):
         with open(file_path, "r", encoding="utf-8") as f:
@@ -54,6 +55,8 @@ def load_characters_from_file():
                     return [v for v in data.values() if isinstance(v, dict) and v.get("name")]
             except Exception as e:
                 print(f"⚠️ JSON 파싱 실패: {e}")
+
+    # 🔴 마지막 return까지 함수 내부 들여쓰기 유지
     return []
 
 
